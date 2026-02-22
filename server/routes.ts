@@ -7,10 +7,16 @@ import { generatePrediction, generateDailyPicks, generateOddsComparison, generat
 import type { MatchPrediction } from "@shared/schema";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+const openaiApiKey = process.env.OPENAI_API_KEY || process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+let openai: OpenAI | null = null;
+if (openaiApiKey) {
+  openai = new OpenAI({
+    apiKey: openaiApiKey,
+    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || undefined,
+  });
+} else {
+  console.warn("No OpenAI API key found. AI chat features will be unavailable.");
+}
 
 let cachedPredictions: MatchPrediction[] = [];
 let lastFetchTime = 0;
@@ -758,6 +764,12 @@ GUIDELINES:
       res.flushHeaders();
 
       try {
+        if (!openai) {
+          res.write(`data: ${JSON.stringify({ content: "AI features are not available. Please configure an OpenAI API key." })}\n\n`);
+          res.write("data: [DONE]\n\n");
+          res.end();
+          return;
+        }
         const stream = await openai.chat.completions.create({
           model: "gpt-5-mini",
           messages: [
