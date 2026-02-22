@@ -32,6 +32,7 @@ export default function Bankroll() {
 
   const { data: entries, isLoading } = useQuery<BankrollEntry[]>({
     queryKey: ["/api/bankroll"],
+    refetchInterval: 60000,
   });
 
   const addMutation = useMutation({
