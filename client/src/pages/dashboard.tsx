@@ -130,12 +130,25 @@ export default function Dashboard() {
   }, [predictions, selectedDate, selectedLeague, showLiveOnly]);
 
   const groupedByDate = useMemo(() => {
+    const statusOrder = (status: string) => {
+      if (status === "IN_PLAY" || status === "PAUSED" || status === "HALFTIME") return 0;
+      if (status === "TIMED" || status === "SCHEDULED") return 1;
+      return 2;
+    };
     const groups: Record<string, MatchPrediction[]> = {};
     filteredPredictions.forEach(p => {
       const key = formatDateKey(p.matchDate);
       if (!groups[key]) groups[key] = [];
       groups[key].push(p);
     });
+    for (const key of Object.keys(groups)) {
+      groups[key].sort((a, b) => {
+        const sa = statusOrder(a.status);
+        const sb = statusOrder(b.status);
+        if (sa !== sb) return sa - sb;
+        return new Date(a.matchDate).getTime() - new Date(b.matchDate).getTime();
+      });
+    }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [filteredPredictions]);
 

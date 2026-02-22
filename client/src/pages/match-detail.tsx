@@ -455,12 +455,11 @@ export default function MatchDetail() {
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex-1 text-center">
             {prediction.homeCrest ? (
-              <img src={prediction.homeCrest} alt="" className="w-16 h-16 object-contain mx-auto mb-3 transition-transform hover:scale-110" />
-            ) : (
-              <div className="w-16 h-16 rounded-full bg-[#00FFA3]/10 border border-[#00FFA3]/20 flex items-center justify-center mx-auto mb-3">
-                <span className="text-xl font-bold text-[#00FFA3]">{prediction.homeTeam.charAt(0)}</span>
-              </div>
-            )}
+              <img src={prediction.homeCrest} alt="" className="w-16 h-16 object-contain mx-auto mb-3 transition-transform hover:scale-110" referrerPolicy="no-referrer" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = "none"; if (el.nextElementSibling) (el.nextElementSibling as HTMLElement).style.display = "flex"; }} />
+            ) : null}
+            <div className="w-16 h-16 rounded-full bg-[#00FFA3]/10 border border-[#00FFA3]/20 items-center justify-center mx-auto mb-3" style={{ display: prediction.homeCrest ? "none" : "flex" }}>
+              <span className="text-xl font-bold text-[#00FFA3]">{prediction.homeTeam.charAt(0)}</span>
+            </div>
             <h3 className="text-lg font-display font-bold text-white" data-testid="text-home-team">{prediction.homeTeam}</h3>
             <div className="flex items-center justify-center gap-1.5 mt-1">
               <p className="text-xs text-white/40">Home</p>
@@ -515,12 +514,11 @@ export default function MatchDetail() {
 
           <div className="flex-1 text-center">
             {prediction.awayCrest ? (
-              <img src={prediction.awayCrest} alt="" className="w-16 h-16 object-contain mx-auto mb-3 transition-transform hover:scale-110" />
-            ) : (
-              <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-3">
-                <span className="text-xl font-bold text-white/60">{prediction.awayTeam.charAt(0)}</span>
-              </div>
-            )}
+              <img src={prediction.awayCrest} alt="" className="w-16 h-16 object-contain mx-auto mb-3 transition-transform hover:scale-110" referrerPolicy="no-referrer" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = "none"; if (el.nextElementSibling) (el.nextElementSibling as HTMLElement).style.display = "flex"; }} />
+            ) : null}
+            <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 items-center justify-center mx-auto mb-3" style={{ display: prediction.awayCrest ? "none" : "flex" }}>
+              <span className="text-xl font-bold text-white/60">{prediction.awayTeam.charAt(0)}</span>
+            </div>
             <h3 className="text-lg font-display font-bold text-white" data-testid="text-away-team">{prediction.awayTeam}</h3>
             <div className="flex items-center justify-center gap-1.5 mt-1">
               <p className="text-xs text-white/40">Away</p>

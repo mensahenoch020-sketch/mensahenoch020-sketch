@@ -110,7 +110,7 @@ export function MatchCard({ prediction }: { prediction: MatchPrediction }) {
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5 bg-white/[0.02]">
           <div className="flex items-center gap-2 min-w-0">
             {prediction.competitionEmblem && (
-              <img src={prediction.competitionEmblem} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+              <img src={prediction.competitionEmblem} alt="" className="w-4 h-4 object-contain flex-shrink-0" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
             )}
             <span className="text-[10px] text-[#00FFA3] uppercase tracking-wider font-bold truncate">
               {prediction.competition}
@@ -139,12 +139,11 @@ export function MatchCard({ prediction }: { prediction: MatchPrediction }) {
           <div className="flex items-center justify-between gap-3 mb-1">
             <div className="flex items-center gap-2.5 flex-1 min-w-0">
               {prediction.homeCrest ? (
-                <img src={prediction.homeCrest} alt="" className="w-7 h-7 object-contain flex-shrink-0" />
-              ) : (
-                <div className="w-7 h-7 rounded-full bg-[#00FFA3]/10 border border-[#00FFA3]/20 flex items-center justify-center flex-shrink-0">
-                  <span className="text-[10px] font-bold text-[#00FFA3]">{prediction.homeTeam.charAt(0)}</span>
-                </div>
-              )}
+                <img src={prediction.homeCrest} alt="" className="w-7 h-7 object-contain flex-shrink-0" referrerPolicy="no-referrer" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = "none"; el.nextElementSibling?.classList.remove("hidden"); }} />
+              ) : null}
+              <div className={`w-7 h-7 rounded-full bg-[#00FFA3]/10 border border-[#00FFA3]/20 flex items-center justify-center flex-shrink-0 ${prediction.homeCrest ? "hidden" : ""}`}>
+                <span className="text-[10px] font-bold text-[#00FFA3]">{prediction.homeTeam.charAt(0)}</span>
+              </div>
               <span className="text-sm font-bold text-white truncate" data-testid={`text-home-${prediction.matchId}`}>
                 {prediction.homeTeam}
               </span>
@@ -161,12 +160,11 @@ export function MatchCard({ prediction }: { prediction: MatchPrediction }) {
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2.5 flex-1 min-w-0">
               {prediction.awayCrest ? (
-                <img src={prediction.awayCrest} alt="" className="w-7 h-7 object-contain flex-shrink-0" />
-              ) : (
-                <div className="w-7 h-7 rounded-full bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
-                  <span className="text-[10px] font-bold text-white/60">{prediction.awayTeam.charAt(0)}</span>
-                </div>
-              )}
+                <img src={prediction.awayCrest} alt="" className="w-7 h-7 object-contain flex-shrink-0" referrerPolicy="no-referrer" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = "none"; el.nextElementSibling?.classList.remove("hidden"); }} />
+              ) : null}
+              <div className={`w-7 h-7 rounded-full bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0 ${prediction.awayCrest ? "hidden" : ""}`}>
+                <span className="text-[10px] font-bold text-white/60">{prediction.awayTeam.charAt(0)}</span>
+              </div>
               <span className="text-sm font-bold text-white truncate" data-testid={`text-away-${prediction.matchId}`}>
                 {prediction.awayTeam}
               </span>

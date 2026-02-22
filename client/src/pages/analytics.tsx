@@ -127,7 +127,7 @@ export default function Analytics() {
                 <Card key={li} className="bg-[#0d1520] border border-[#00FFA3]/15 rounded-xl overflow-hidden" data-testid={`standings-card-${li}`}>
                   <div className="flex items-center gap-3 p-4 border-b border-white/5 bg-white/[0.02]">
                     {league.emblem && (
-                      <img src={league.emblem} alt="" className="w-6 h-6 object-contain" />
+                      <img src={league.emblem} alt="" className="w-6 h-6 object-contain" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                     )}
                     <Trophy className="w-5 h-5 text-[#FFB800]" />
                     <h3 className="font-display font-bold text-white">{league.competition}</h3>
@@ -168,7 +168,7 @@ export default function Analytics() {
                               <td className="py-2.5 px-3">
                                 <div className="flex items-center gap-2">
                                   {entry.team.crest && (
-                                    <img src={entry.team.crest} alt="" className="w-5 h-5 object-contain" />
+                                    <img src={entry.team.crest} alt="" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                                   )}
                                   <span className="text-sm font-medium text-white truncate max-w-[150px]">
                                     {entry.team.shortName || entry.team.name}
@@ -245,7 +245,7 @@ export default function Analytics() {
                         <div key={j} className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-white/[0.03] border border-white/5 transition-all hover:bg-white/[0.06]">
                           <div className="flex items-center gap-2.5">
                             <span className={`text-xs font-mono font-bold w-5 text-center ${j === 0 ? stat.color : "text-white/40"}`}>{j + 1}</span>
-                            {entry.team.crest && <img src={entry.team.crest} alt="" className="w-5 h-5 object-contain" />}
+                            {entry.team.crest && <img src={entry.team.crest} alt="" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />}
                             <span className="text-xs font-medium text-white truncate max-w-[120px]">{entry.team.shortName || entry.team.name}</span>
                           </div>
                           <span className={`text-sm font-mono font-bold ${stat.color}`}>

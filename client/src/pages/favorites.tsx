@@ -87,12 +87,11 @@ export default function Favorites() {
           {filtered.map((fav) => (
             <Card key={fav.id} className="bg-[#0d1520] border border-[#00FFA3]/15 rounded-xl p-4 text-center relative group" data-testid={`favorite-team-${fav.teamId}`}>
               {fav.teamCrest ? (
-                <img src={fav.teamCrest} alt={fav.teamName} className="w-14 h-14 object-contain mx-auto mb-3 transition-transform group-hover:scale-110" />
-              ) : (
-                <div className="w-14 h-14 rounded-full bg-[#00FFA3]/10 border border-[#00FFA3]/20 flex items-center justify-center mx-auto mb-3">
-                  <span className="text-xl font-bold text-[#00FFA3]">{fav.teamName.charAt(0)}</span>
-                </div>
-              )}
+                <img src={fav.teamCrest} alt={fav.teamName} className="w-14 h-14 object-contain mx-auto mb-3 transition-transform group-hover:scale-110" referrerPolicy="no-referrer" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = "none"; if (el.nextElementSibling) (el.nextElementSibling as HTMLElement).style.display = "flex"; }} />
+              ) : null}
+              <div className="w-14 h-14 rounded-full bg-[#00FFA3]/10 border border-[#00FFA3]/20 items-center justify-center mx-auto mb-3" style={{ display: fav.teamCrest ? "none" : "flex" }}>
+                <span className="text-xl font-bold text-[#00FFA3]">{fav.teamName.charAt(0)}</span>
+              </div>
               <p className="text-sm font-bold text-white truncate">{fav.teamName}</p>
               <Button
                 size="icon"

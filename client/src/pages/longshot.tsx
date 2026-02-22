@@ -404,15 +404,15 @@ export default function Longshot() {
 
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            {leg.homeCrest && <img src={leg.homeCrest} alt="" className="w-4 h-4" />}
+                            {leg.homeCrest && <img src={leg.homeCrest} alt="" className="w-4 h-4" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />}
                             <span className="text-xs font-bold text-white truncate">{leg.homeTeam}</span>
                             <span className="text-[10px] text-white/30">vs</span>
-                            {leg.awayCrest && <img src={leg.awayCrest} alt="" className="w-4 h-4" />}
+                            {leg.awayCrest && <img src={leg.awayCrest} alt="" className="w-4 h-4" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />}
                             <span className="text-xs font-bold text-white truncate">{leg.awayTeam}</span>
                           </div>
 
                           <div className="flex items-center gap-2">
-                            {leg.competitionEmblem && <img src={leg.competitionEmblem} alt="" className="w-3 h-3 opacity-50" />}
+                            {leg.competitionEmblem && <img src={leg.competitionEmblem} alt="" className="w-3 h-3 opacity-50" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />}
                             <span className="text-[10px] text-white/40 truncate">{leg.competition}</span>
                             <span className="text-[10px] text-white/30">{formatTime(leg.matchDate)}</span>
                           </div>
