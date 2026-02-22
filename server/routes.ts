@@ -3,7 +3,7 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { getMatches, getTopLeagueStandings, transformMatch, getHeadToHead, getTeamRecentMatches, getMatchDetails } from "./football-api";
-import { generatePrediction, generateDailyPicks, generateOddsComparison, generateLongshotAccumulator } from "./prediction-engine";
+import { generatePrediction, generateDailyPicks, generateOddsComparison, generateLongshotAccumulator, refreshTeamStats } from "./prediction-engine";
 import type { MatchPrediction } from "@shared/schema";
 import { generateAIResponse } from "./ai-advisor";
 
@@ -112,6 +112,12 @@ export async function registerRoutes(
 ): Promise<Server> {
   await setupAuth(app);
   registerAuthRoutes(app);
+
+  refreshTeamStats().then(() => {
+    console.log("[Startup] Team stats loaded from real standings data");
+  }).catch(err => {
+    console.error("[Startup] Failed to load team stats:", err);
+  });
 
   scheduleDailyPicks();
 

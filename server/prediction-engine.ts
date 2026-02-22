@@ -1,13 +1,191 @@
 import type { MatchPrediction, PredictionMarket, MatchScore } from "@shared/schema";
+import { getTopLeagueStandings, getTeamRecentMatches } from "./football-api";
 
-function seededRandom(seed: number, offset: number = 0): number {
-  const s = ((seed + offset) * 9301 + 49297) % 233280;
-  return s / 233280;
+// ============================================
+// REAL TEAM DATA SYSTEM
+// ============================================
+
+interface TeamStats {
+  teamId: number;
+  teamName: string;
+  position: number;
+  played: number;
+  won: number;
+  draw: number;
+  lost: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  points: number;
+  competition: string;
+  totalTeams: number;
+  goalsPerGame: number;
+  goalsConcededPerGame: number;
+  winRate: number;
+  drawRate: number;
+  lossRate: number;
+  elo: number;
 }
 
-function teamNameToSeed(name: string): number {
-  return name.split("").reduce((a, b) => a + b.charCodeAt(0), 0);
+let teamStatsCache: Map<string, TeamStats> = new Map();
+let teamIdCache: Map<number, TeamStats> = new Map();
+let lastStandingsRefresh = 0;
+const STANDINGS_CACHE_DURATION = 60 * 60 * 1000; // 1 hour
+
+function normalizeTeamName(name: string): string {
+  return name.toLowerCase()
+    .replace(/\bfc\b/g, "")
+    .replace(/\bsc\b/g, "")
+    .replace(/\bcf\b/g, "")
+    .replace(/\bac\b/g, "")
+    .replace(/\bas\b/g, "")
+    .replace(/\bssc\b/g, "")
+    .replace(/\bud\b/g, "")
+    .replace(/\brc\b/g, "")
+    .replace(/\bcd\b/g, "")
+    .replace(/\bsv\b/g, "")
+    .replace(/\btsg\b/g, "")
+    .replace(/\bvfb\b/g, "")
+    .replace(/\bvfl\b/g, "")
+    .replace(/\b1\.\b/g, "")
+    .replace(/\bde\b/g, "")
+    .trim()
+    .replace(/\s+/g, " ");
 }
+
+function calculateEloFromStandings(stats: TeamStats): number {
+  const positionScore = (1 - (stats.position - 1) / Math.max(1, stats.totalTeams - 1)) * 400;
+  const gdScore = Math.max(-200, Math.min(200, stats.goalDifference * 5));
+  const winRateScore = stats.winRate * 300;
+  const gpgScore = stats.goalsPerGame * 80;
+  const competitionBonus = getCompetitionTier(stats.competition);
+
+  return Math.round(1200 + positionScore + gdScore + winRateScore + gpgScore + competitionBonus);
+}
+
+function getCompetitionTier(comp: string): number {
+  const c = comp.toLowerCase();
+  if (c.includes("premier league")) return 120;
+  if (c.includes("la liga") || c.includes("laliga")) return 110;
+  if (c.includes("bundesliga")) return 100;
+  if (c.includes("serie a")) return 105;
+  if (c.includes("ligue 1")) return 80;
+  if (c.includes("champions")) return 130;
+  if (c.includes("europa")) return 70;
+  if (c.includes("eredivisie")) return 50;
+  if (c.includes("primeira")) return 60;
+  if (c.includes("championship")) return 40;
+  if (c.includes("brasileirão") || c.includes("serie a") && c.includes("brazil")) return 55;
+  return 30;
+}
+
+export async function refreshTeamStats(): Promise<void> {
+  const now = Date.now();
+  if (now - lastStandingsRefresh < STANDINGS_CACHE_DURATION && teamStatsCache.size > 0) {
+    return;
+  }
+
+  try {
+    console.log("[TeamStats] Fetching real standings data from Football Data API...");
+    const standings = await getTopLeagueStandings();
+
+    const newCache = new Map<string, TeamStats>();
+    const newIdCache = new Map<number, TeamStats>();
+
+    for (const league of standings) {
+      const totalTeams = league.table?.length || 20;
+
+      for (const entry of league.table || []) {
+        const played = entry.playedGames || entry.played || 0;
+        if (played === 0) continue;
+
+        const stats: TeamStats = {
+          teamId: entry.team?.id || 0,
+          teamName: entry.team?.name || "Unknown",
+          position: entry.position || 1,
+          played,
+          won: entry.won || 0,
+          draw: entry.draw || 0,
+          lost: entry.lost || 0,
+          goalsFor: entry.goalsFor || 0,
+          goalsAgainst: entry.goalsAgainst || 0,
+          goalDifference: entry.goalDifference || 0,
+          points: entry.points || 0,
+          competition: league.competition || "Unknown",
+          totalTeams,
+          goalsPerGame: played > 0 ? (entry.goalsFor || 0) / played : 1.2,
+          goalsConcededPerGame: played > 0 ? (entry.goalsAgainst || 0) / played : 1.2,
+          winRate: played > 0 ? (entry.won || 0) / played : 0.33,
+          drawRate: played > 0 ? (entry.draw || 0) / played : 0.33,
+          lossRate: played > 0 ? (entry.lost || 0) / played : 0.33,
+          elo: 0,
+        };
+
+        stats.elo = calculateEloFromStandings(stats);
+
+        const teamName = entry.team?.name || "";
+        newCache.set(teamName.toLowerCase(), stats);
+        newCache.set(normalizeTeamName(teamName), stats);
+        if (entry.team?.shortName) {
+          newCache.set(entry.team.shortName.toLowerCase(), stats);
+        }
+        if (stats.teamId > 0) {
+          newIdCache.set(stats.teamId, stats);
+        }
+      }
+    }
+
+    teamStatsCache = newCache;
+    teamIdCache = newIdCache;
+    lastStandingsRefresh = now;
+    console.log(`[TeamStats] Loaded real stats for ${newIdCache.size} teams from ${standings.length} competitions`);
+  } catch (err) {
+    console.error("[TeamStats] Failed to fetch standings:", err);
+  }
+}
+
+function lookupTeam(teamName: string, teamId?: number): TeamStats | null {
+  if (teamId && teamIdCache.has(teamId)) {
+    return teamIdCache.get(teamId)!;
+  }
+  const key = teamName.toLowerCase();
+  if (teamStatsCache.has(key)) return teamStatsCache.get(key)!;
+  const norm = normalizeTeamName(teamName);
+  if (teamStatsCache.has(norm)) return teamStatsCache.get(norm)!;
+
+  for (const [k, v] of teamStatsCache) {
+    if (k.includes(norm) || norm.includes(k)) return v;
+  }
+  return null;
+}
+
+function getDefaultStats(teamName: string): TeamStats {
+  return {
+    teamId: 0,
+    teamName,
+    position: 10,
+    played: 20,
+    won: 7,
+    draw: 6,
+    lost: 7,
+    goalsFor: 24,
+    goalsAgainst: 24,
+    goalDifference: 0,
+    points: 27,
+    competition: "Unknown",
+    totalTeams: 20,
+    goalsPerGame: 1.2,
+    goalsConcededPerGame: 1.2,
+    winRate: 0.35,
+    drawRate: 0.30,
+    lossRate: 0.35,
+    elo: 1400,
+  };
+}
+
+// ============================================
+// MATH FUNCTIONS (kept correct, now fed real data)
+// ============================================
 
 function poissonProbability(lambda: number, k: number): number {
   return (Math.pow(lambda, k) * Math.exp(-lambda)) / factorial(k);
@@ -24,29 +202,21 @@ function eloExpected(ratingA: number, ratingB: number): number {
   return 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
 }
 
-function generateTeamStrength(teamName: string): number {
-  const seed = teamNameToSeed(teamName);
-  const topTeams = ["Liverpool", "Arsenal", "Manchester City", "Real Madrid", "Barcelona", "Bayern", "PSG", "Inter", "Juventus", "Chelsea", "Manchester United", "Tottenham", "Dortmund", "Napoli", "Atletico", "AC Milan"];
-  const isTop = topTeams.some(t => teamName.toLowerCase().includes(t.toLowerCase()));
-  const base = isTop ? 1650 + seededRandom(seed, 10) * 150 : 1350 + seededRandom(seed, 10) * 300;
-  return Math.round(base);
+function estimateXG(teamGoalsPerGame: number, oppConcededPerGame: number, isHome: boolean): number {
+  const leagueAvg = 1.35;
+  const attackStrength = teamGoalsPerGame / leagueAvg;
+  const defenseWeakness = oppConcededPerGame / leagueAvg;
+  const homeAdv = isHome ? 0.2 : -0.05;
+  const xg = leagueAvg * attackStrength * defenseWeakness + homeAdv;
+  return Math.max(0.25, Math.min(3.8, xg));
 }
 
-function estimateXG(teamElo: number, oppElo: number, isHome: boolean): number {
-  const baseXG = 1.3;
-  const eloDiff = (teamElo - oppElo) / 400;
-  const homeAdv = isHome ? 0.25 : -0.05;
-  const xg = baseXG + eloDiff * 0.8 + homeAdv;
-  return Math.max(0.3, Math.min(3.5, xg));
-}
-
-function monteCarloProbabilities(homeXG: number, awayXG: number, simulations: number = 10000, seed: number): { home: number; draw: number; away: number } {
+function monteCarloProbabilities(homeXG: number, awayXG: number, simulations: number = 10000): { home: number; draw: number; away: number } {
   let homeWins = 0, draws = 0, awayWins = 0;
+
   for (let i = 0; i < simulations; i++) {
-    const r1 = seededRandom(seed, i * 2);
-    const r2 = seededRandom(seed, i * 2 + 1);
-    const homeGoals = poissonSample(homeXG, r1, seed + i);
-    const awayGoals = poissonSample(awayXG, r2, seed + i + simulations);
+    const homeGoals = poissonSampleRandom(homeXG);
+    const awayGoals = poissonSampleRandom(awayXG);
     if (homeGoals > awayGoals) homeWins++;
     else if (homeGoals === awayGoals) draws++;
     else awayWins++;
@@ -58,16 +228,14 @@ function monteCarloProbabilities(homeXG: number, awayXG: number, simulations: nu
   };
 }
 
-function poissonSample(lambda: number, r: number, seed: number): number {
+function poissonSampleRandom(lambda: number): number {
   let L = Math.exp(-lambda);
   let k = 0;
   let p = 1;
-  let rng = r;
   do {
     k++;
-    rng = seededRandom(seed, k * 31 + Math.floor(r * 1000));
-    p *= rng;
-  } while (p > L && k < 10);
+    p *= Math.random();
+  } while (p > L && k < 15);
   return k - 1;
 }
 
@@ -78,7 +246,6 @@ function computeBTTSProbability(homeXG: number, awayXG: number): number {
 }
 
 function computeOverUnderProbability(homeXG: number, awayXG: number, line: number): number {
-  const totalXG = homeXG + awayXG;
   let underProb = 0;
   for (let hg = 0; hg <= 8; hg++) {
     for (let ag = 0; ag <= 8; ag++) {
@@ -115,6 +282,10 @@ function probToOdds(prob: number): string {
   return Math.max(1.01, withMargin).toFixed(2);
 }
 
+// ============================================
+// MARKET SELECTION
+// ============================================
+
 type MarketCategory = "result" | "safety" | "goals" | "btts" | "score" | "handicap" | "halftime" | "team_goals" | "combo" | "misc";
 
 const MARKET_CATEGORIES: Record<string, MarketCategory> = {
@@ -144,6 +315,15 @@ const MARKET_CATEGORIES: Record<string, MarketCategory> = {
   "Double Chance + BTTS": "combo",
 };
 
+function seededRandom(seed: number, offset: number = 0): number {
+  const s = ((seed + offset) * 9301 + 49297) % 233280;
+  return s / 233280;
+}
+
+function teamNameToSeed(name: string): number {
+  return name.split("").reduce((a, b) => a + b.charCodeAt(0), 0);
+}
+
 function selectTop3Markets(markets: PredictionMarket[], homeXG: number, awayXG: number, probs: { home: number; draw: number; away: number }, seed: number, matchId: number = 0, competition: string = ""): PredictionMarket[] {
   const totalXG = homeXG + awayXG;
   const probGap = Math.abs(probs.home - probs.away);
@@ -151,7 +331,6 @@ function selectTop3Markets(markets: PredictionMarket[], homeXG: number, awayXG: 
   const isClose = probGap < 10;
   const isHighScoring = totalXG > 2.8;
   const isLowScoring = totalXG < 2.0;
-  const winnerProb = Math.max(probs.home, probs.away);
 
   const profileKey = (isDominant ? "D" : isClose ? "C" : "M") + (isHighScoring ? "H" : isLowScoring ? "L" : "N");
 
@@ -230,7 +409,11 @@ function selectTop3Markets(markets: PredictionMarket[], homeXG: number, awayXG: 
   return selected;
 }
 
-function generateMarkets(homeXG: number, awayXG: number, probs: { home: number; draw: number; away: number }, homeTeam: string, awayTeam: string, seed: number, matchId: number = 0, competition: string = ""): PredictionMarket[] {
+// ============================================
+// MARKET GENERATION (now using real xG)
+// ============================================
+
+function generateMarkets(homeXG: number, awayXG: number, probs: { home: number; draw: number; away: number }, homeTeam: string, awayTeam: string, seed: number, matchId: number = 0, competition: string = "", homeStats: TeamStats | null = null, awayStats: TeamStats | null = null): PredictionMarket[] {
   const winner = probs.home > probs.away ? homeTeam : awayTeam;
   const winnerProb = Math.max(probs.home, probs.away);
 
@@ -250,16 +433,23 @@ function generateMarkets(homeXG: number, awayXG: number, probs: { home: number; 
     ? Math.min(95, probs.home + probs.draw)
     : Math.min(95, probs.away + probs.draw);
 
+  const homeElo = homeStats?.elo || 1400;
+  const awayElo = awayStats?.elo || 1400;
   const htProb = probs.home > probs.away
-    ? eloExpected(generateTeamStrength(homeTeam), generateTeamStrength(awayTeam)) * 0.75
-    : eloExpected(generateTeamStrength(awayTeam), generateTeamStrength(homeTeam)) * 0.6;
+    ? eloExpected(homeElo, awayElo) * 0.75
+    : eloExpected(awayElo, homeElo) * 0.6;
 
   const homeTeamOver15 = computeOverUnderProbability(homeXG, 0, 1);
   const awayTeamOver15 = computeOverUnderProbability(awayXG, 0, 1);
 
-  const r = seededRandom(seed, 100);
   const totalXG = homeXG + awayXG;
-  const oddGoalsProb = 0.48 + seededRandom(seed, 200) * 0.04;
+
+  const homeDrawRate = homeStats?.drawRate ?? 0.27;
+  const awayDrawRate = awayStats?.drawRate ?? 0.27;
+  const avgDrawRate = (homeDrawRate + awayDrawRate) / 2;
+  const oddGoalsProb = 0.46 + avgDrawRate * 0.1;
+
+  const r = seededRandom(seed, 100);
 
   const allMarkets: PredictionMarket[] = [
     {
@@ -330,9 +520,9 @@ function generateMarkets(homeXG: number, awayXG: number, probs: { home: number; 
     },
     {
       market: "Halftime Result",
-      pick: probs.home > probs.away ? `${homeTeam} Lead` : r > 0.5 ? "Draw" : `${awayTeam} Lead`,
-      confidence: Math.round(25 + seededRandom(seed, 44) * 35),
-      odds: probToOdds(Math.round(25 + seededRandom(seed, 44) * 35)),
+      pick: probs.home > probs.away ? `${homeTeam} Lead` : probs.draw > probs.away * 0.8 ? "Draw" : `${awayTeam} Lead`,
+      confidence: Math.round(Math.max(probs.home, probs.away, probs.draw) * 0.65),
+      odds: probToOdds(Math.round(Math.max(probs.home, probs.away, probs.draw) * 0.65)),
     },
     {
       market: "Home Team Goals O/U 1.5",
@@ -349,8 +539,8 @@ function generateMarkets(homeXG: number, awayXG: number, probs: { home: number; 
     {
       market: "Exact Total Goals",
       pick: totalXG < 1.5 ? "1 Goal" : totalXG < 2.5 ? "2 Goals" : "3 Goals",
-      confidence: Math.round(20 + seededRandom(seed, 77) * 20),
-      odds: probToOdds(Math.round(20 + seededRandom(seed, 77) * 20)),
+      confidence: Math.round(poissonProbability(totalXG, Math.round(totalXG)) * 100),
+      odds: probToOdds(Math.round(poissonProbability(totalXG, Math.round(totalXG)) * 100)),
     },
     {
       market: "Odd/Even Goals",
@@ -361,26 +551,26 @@ function generateMarkets(homeXG: number, awayXG: number, probs: { home: number; 
     {
       market: "Winning Margin",
       pick: probs.home > probs.away ? `${homeTeam} by 1` : `${awayTeam} by 1`,
-      confidence: Math.round(20 + seededRandom(seed, 88) * 25),
+      confidence: Math.round(poissonProbability(Math.abs(homeXG - awayXG), 1) * winnerProb),
       odds: "3.50",
     },
     {
       market: "No Bet (Draw No Bet)",
       pick: probs.home > probs.away ? `${homeTeam}` : `${awayTeam}`,
-      confidence: Math.round(winnerProb * 1.1),
-      odds: probToOdds(Math.round(winnerProb * 1.1)),
+      confidence: Math.round(Math.min(90, winnerProb * 1.1)),
+      odds: probToOdds(Math.round(Math.min(90, winnerProb * 1.1))),
     },
     {
       market: "First Goal",
       pick: probs.home > probs.away ? homeTeam : awayTeam,
-      confidence: Math.round(30 + seededRandom(seed, 99) * 30),
-      odds: probToOdds(Math.round(30 + seededRandom(seed, 99) * 30)),
+      confidence: Math.round((probs.home > probs.away ? homeXG : awayXG) / (homeXG + awayXG) * 100 * 0.8),
+      odds: probToOdds(Math.round((probs.home > probs.away ? homeXG : awayXG) / (homeXG + awayXG) * 100)),
     },
     {
       market: "Last Goal",
-      pick: seededRandom(seed, 111) > 0.5 ? homeTeam : awayTeam,
-      confidence: Math.round(25 + seededRandom(seed, 112) * 30),
-      odds: probToOdds(Math.round(25 + seededRandom(seed, 112) * 30)),
+      pick: homeXG > awayXG ? homeTeam : awayTeam,
+      confidence: Math.round(Math.max(homeXG, awayXG) / (homeXG + awayXG) * 100 * 0.75),
+      odds: probToOdds(Math.round(Math.max(homeXG, awayXG) / (homeXG + awayXG) * 100)),
     },
     {
       market: "1X2 + Over/Under 2.5",
@@ -421,7 +611,13 @@ function getOverallConfidence(markets: PredictionMarket[]): "Low" | "Mid" | "Hig
   return "Low";
 }
 
+// ============================================
+// MAIN PREDICTION GENERATOR (REAL DATA)
+// ============================================
+
 export async function generatePrediction(match: any): Promise<MatchPrediction> {
+  await refreshTeamStats();
+
   const homeTeam = match.homeTeam?.name || match.homeTeam?.shortName || "Home";
   const awayTeam = match.awayTeam?.name || match.awayTeam?.shortName || "Away";
   const homeCrest = match.homeTeam?.crest || "";
@@ -429,29 +625,34 @@ export async function generatePrediction(match: any): Promise<MatchPrediction> {
   const competition = match.competition?.name || "Unknown";
   const competitionEmblem = match.competition?.emblem || "";
   const matchDate = match.utcDate || new Date().toISOString();
+  const matchId = match.id || 0;
 
-  const seed = teamNameToSeed(homeTeam + awayTeam);
+  const homeStats = lookupTeam(homeTeam, match.homeTeam?.id);
+  const awayStats = lookupTeam(awayTeam, match.awayTeam?.id);
 
-  const homeElo = generateTeamStrength(homeTeam);
-  const awayElo = generateTeamStrength(awayTeam);
+  const hStats = homeStats || getDefaultStats(homeTeam);
+  const aStats = awayStats || getDefaultStats(awayTeam);
 
-  const homeXG = estimateXG(homeElo, awayElo, true);
-  const awayXG = estimateXG(awayElo, homeElo, false);
+  const hasRealData = homeStats !== null || awayStats !== null;
+  const dataSource = homeStats && awayStats ? "full standings" : homeStats || awayStats ? "partial standings" : "estimated";
 
-  const mcProbs = monteCarloProbabilities(homeXG, awayXG, 5000, seed);
+  const homeXG = estimateXG(hStats.goalsPerGame, aStats.goalsConcededPerGame, true);
+  const awayXG = estimateXG(aStats.goalsPerGame, hStats.goalsConcededPerGame, false);
 
-  const eloHome = Math.round(eloExpected(homeElo + 65, awayElo) * 100);
-  const eloDraw = Math.round(20 + seededRandom(seed, 50) * 10);
+  const mcProbs = monteCarloProbabilities(homeXG, awayXG, 10000);
+
+  const eloHome = Math.round(eloExpected(hStats.elo + 50, aStats.elo) * 100);
+  const eloDraw = Math.round(15 + (hStats.drawRate + aStats.drawRate) / 2 * 25);
   const eloAway = 100 - eloHome - eloDraw;
 
-  const bayesHome = Math.round((mcProbs.home * 0.5 + eloHome * 0.3 + (homeXG > awayXG ? 55 : 35) * 0.2));
-  const bayesDraw = Math.round((mcProbs.draw * 0.5 + eloDraw * 0.3 + 25 * 0.2));
+  const bayesHome = Math.round(mcProbs.home * 0.45 + eloHome * 0.35 + (homeXG > awayXG ? 55 : 35) * 0.20);
+  const bayesDraw = Math.round(mcProbs.draw * 0.45 + eloDraw * 0.35 + 25 * 0.20);
   const bayesAway = 100 - bayesHome - bayesDraw;
 
   const probs = {
-    home: Math.max(10, bayesHome),
-    draw: Math.max(10, Math.min(35, bayesDraw)),
-    away: Math.max(10, bayesAway),
+    home: Math.max(8, bayesHome),
+    draw: Math.max(8, Math.min(38, bayesDraw)),
+    away: Math.max(8, bayesAway),
   };
 
   const total = probs.home + probs.draw + probs.away;
@@ -459,7 +660,8 @@ export async function generatePrediction(match: any): Promise<MatchPrediction> {
   probs.draw = Math.round(probs.draw / total * 100);
   probs.away = 100 - probs.home - probs.draw;
 
-  const markets = generateMarkets(homeXG, awayXG, probs, homeTeam, awayTeam, seed, match.id || 0, competition);
+  const seed = teamNameToSeed(homeTeam + awayTeam);
+  const markets = generateMarkets(homeXG, awayXG, probs, homeTeam, awayTeam, seed, matchId, competition, hStats, aStats);
   const overallConfidence = getOverallConfidence(markets);
 
   const top3Markets = markets.slice(0, 3);
@@ -483,25 +685,36 @@ export async function generatePrediction(match: any): Promise<MatchPrediction> {
 
   let aiSummary = "";
 
-  if (isDominant && isHighScoring) {
-    aiSummary += `${favoredTeam} are strong favorites (${favoredProb}%) and goals look very likely. Our xG model projects ${homeXG.toFixed(1)} xG for ${homeTeam} and ${awayXG.toFixed(1)} for ${awayTeam} (${totalXG.toFixed(1)} combined). There's a ${Math.round(over25Prob * 100)}% chance of Over 2.5 goals. `;
-  } else if (isDominant && isLowScoring) {
-    aiSummary += `${favoredTeam} should control this match (${favoredProb}%), but expect a tight, low-scoring affair. xG projections: ${homeTeam} ${homeXG.toFixed(1)} vs ${awayTeam} ${awayXG.toFixed(1)}. ${cleanSheetHome > 35 ? `${homeTeam} have a ${cleanSheetHome}% clean sheet chance. ` : ""}`;
-  } else if (isDominant) {
-    aiSummary += `${favoredTeam} are clear favorites at ${favoredProb}%. Our model gives ${homeTeam} ${homeXG.toFixed(1)} xG and ${awayTeam} ${awayXG.toFixed(1)} xG. ${homeScoreProb > 80 ? `${homeTeam} have an ${homeScoreProb}% chance of scoring at least once. ` : `${awayTeam} have an ${awayScoreProb}% chance of finding the net. `}`;
-  } else if (isClose && isHighScoring) {
-    aiSummary += `An open, evenly-matched contest — expect fireworks. Both sides create plenty of chances: ${homeTeam} ${homeXG.toFixed(1)} xG vs ${awayTeam} ${awayXG.toFixed(1)} xG. BTTS probability sits at ${Math.round(bttsProb * 100)}% and Over 2.5 at ${Math.round(over25Prob * 100)}%. `;
-  } else if (isClose && isLowScoring) {
-    aiSummary += `A cagey contest expected. Both defenses look solid with clean sheet chances of ${cleanSheetHome}% (${homeTeam}) and ${cleanSheetAway}% (${awayTeam}). xG: ${homeXG.toFixed(1)} vs ${awayXG.toFixed(1)}. The most likely scoreline is ${topScore.score} (${Math.round(topScore.prob * 100)}%). `;
-  } else if (isClose) {
-    aiSummary += `Very tight match — ${homeTeam} (${probs.home}%) vs ${awayTeam} (${probs.away}%). xG model shows ${homeXG.toFixed(1)} vs ${awayXG.toFixed(1)}. BTTS has a ${Math.round(bttsProb * 100)}% probability. `;
-  } else if (isHighScoring) {
-    aiSummary += `${favoredTeam} have the edge at ${favoredProb}% in what should be an entertaining game. Combined xG of ${totalXG.toFixed(1)} (${homeTeam} ${homeXG.toFixed(1)}, ${awayTeam} ${awayXG.toFixed(1)}). Over 2.5 goals at ${Math.round(over25Prob * 100)}%. `;
-  } else {
-    aiSummary += `${favoredTeam} are slight favorites at ${favoredProb}%. xG model: ${homeTeam} ${homeXG.toFixed(1)} vs ${awayTeam} ${awayXG.toFixed(1)}. Both teams have scoring chances — ${homeScoreProb}% and ${awayScoreProb}% to score respectively. `;
+  const hPosLabel = homeStats ? `${hStats.position}${ordinal(hStats.position)} in ${hStats.competition}` : "";
+  const aPosLabel = awayStats ? `${aStats.position}${ordinal(aStats.position)} in ${aStats.competition}` : "";
+
+  if (homeStats && awayStats) {
+    aiSummary += `Based on real league standings: ${homeTeam} sit ${hPosLabel} (${hStats.won}W ${hStats.draw}D ${hStats.lost}L, ${hStats.goalsFor} goals scored, ${hStats.goalsAgainst} conceded) while ${awayTeam} are ${aPosLabel} (${aStats.won}W ${aStats.draw}D ${aStats.lost}L, ${aStats.goalsFor} GF, ${aStats.goalsAgainst} GA). `;
+  } else if (homeStats) {
+    aiSummary += `${homeTeam} sit ${hPosLabel} (${hStats.won}W ${hStats.draw}D ${hStats.lost}L, GD: ${hStats.goalDifference > 0 ? "+" : ""}${hStats.goalDifference}). `;
+  } else if (awayStats) {
+    aiSummary += `${awayTeam} are ${aPosLabel} (${aStats.won}W ${aStats.draw}D ${aStats.lost}L, GD: ${aStats.goalDifference > 0 ? "+" : ""}${aStats.goalDifference}). `;
   }
 
-  aiSummary += `Our models ran 5,000 Monte Carlo simulations. Most likely score: ${topScore.score} (${Math.round(topScore.prob * 100)}% probability). `;
+  if (isDominant && isHighScoring) {
+    aiSummary += `${favoredTeam} are strong favorites (${favoredProb}%) and goals look very likely. xG projection: ${homeTeam} ${homeXG.toFixed(1)} vs ${awayTeam} ${awayXG.toFixed(1)} (${totalXG.toFixed(1)} combined). There's a ${Math.round(over25Prob * 100)}% chance of Over 2.5 goals. `;
+  } else if (isDominant && isLowScoring) {
+    aiSummary += `${favoredTeam} should control this match (${favoredProb}%), but expect a tight affair. xG: ${homeTeam} ${homeXG.toFixed(1)} vs ${awayTeam} ${awayXG.toFixed(1)}. ${cleanSheetHome > 35 ? `${homeTeam} have a ${cleanSheetHome}% clean sheet chance. ` : ""}`;
+  } else if (isDominant) {
+    aiSummary += `${favoredTeam} are clear favorites at ${favoredProb}%. xG: ${homeTeam} ${homeXG.toFixed(1)} vs ${awayTeam} ${awayXG.toFixed(1)}. ${homeScoreProb > 80 ? `${homeTeam} have an ${homeScoreProb}% chance of scoring. ` : `${awayTeam} have an ${awayScoreProb}% chance of finding the net. `}`;
+  } else if (isClose && isHighScoring) {
+    aiSummary += `An open, evenly-matched contest. xG: ${homeTeam} ${homeXG.toFixed(1)} vs ${awayTeam} ${awayXG.toFixed(1)}. BTTS probability: ${Math.round(bttsProb * 100)}%, Over 2.5: ${Math.round(over25Prob * 100)}%. `;
+  } else if (isClose && isLowScoring) {
+    aiSummary += `A cagey contest expected. Clean sheet chances: ${cleanSheetHome}% (${homeTeam}), ${cleanSheetAway}% (${awayTeam}). xG: ${homeXG.toFixed(1)} vs ${awayXG.toFixed(1)}. Most likely score: ${topScore.score} (${Math.round(topScore.prob * 100)}%). `;
+  } else if (isClose) {
+    aiSummary += `Very tight match — ${homeTeam} (${probs.home}%) vs ${awayTeam} (${probs.away}%). xG: ${homeXG.toFixed(1)} vs ${awayXG.toFixed(1)}. BTTS: ${Math.round(bttsProb * 100)}%. `;
+  } else if (isHighScoring) {
+    aiSummary += `${favoredTeam} have the edge at ${favoredProb}% in what should be entertaining. Combined xG: ${totalXG.toFixed(1)} (${homeTeam} ${homeXG.toFixed(1)}, ${awayTeam} ${awayXG.toFixed(1)}). Over 2.5 at ${Math.round(over25Prob * 100)}%. `;
+  } else {
+    aiSummary += `${favoredTeam} are slight favorites at ${favoredProb}%. xG: ${homeTeam} ${homeXG.toFixed(1)} vs ${awayTeam} ${awayXG.toFixed(1)}. Both teams have scoring chances — ${homeScoreProb}% and ${awayScoreProb}% to score. `;
+  }
+
+  aiSummary += `Our models ran 10,000 Monte Carlo simulations. Most likely score: ${topScore.score} (${Math.round(topScore.prob * 100)}% probability). `;
 
   const top3Categories = top3Markets.map(m => MARKET_CATEGORIES[m.market] || "misc");
   const hasGoalsMarket = top3Categories.includes("goals") || top3Categories.includes("btts");
@@ -523,6 +736,10 @@ export async function generatePrediction(match: any): Promise<MatchPrediction> {
     const label = m.confidence >= 70 ? "Very Strong" : m.confidence >= 55 ? "Strong" : m.confidence >= 40 ? "Moderate" : "Value";
     aiSummary += `${i + 1}. ${m.market}: ${m.pick} (${m.confidence}% confidence — ${label})\n`;
   });
+
+  if (!hasRealData) {
+    aiSummary += `\nNote: Limited data available for these teams. Predictions are estimated.`;
+  }
 
   if (overallConfidence === "High") {
     aiSummary += `\nSolid value across the board. Our confidence is high on this match.`;
@@ -565,26 +782,28 @@ export async function generatePrediction(match: any): Promise<MatchPrediction> {
   };
 }
 
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 function winnerProb(probs: { home: number; draw: number; away: number }): number {
   return Math.max(probs.home, probs.away);
 }
 
-export function generateOddsComparison(markets: PredictionMarket[]): any[] {
-  const bookmakers = ["Bet365", "William Hill", "Betfair", "Unibet", "888sport"];
+// ============================================
+// ODDS COMPARISON (probability-derived estimates)
+// ============================================
 
+export function generateOddsComparison(markets: PredictionMarket[]): any[] {
   return markets.slice(0, 5).map(market => {
     const baseOdds = parseFloat(market.odds || "2.00");
-    const variations = bookmakers.map(bk => {
-      const seed = bk.split("").reduce((a, b) => a + b.charCodeAt(0), 0);
-      const variation = ((seed % 20) - 10) / 100;
-      const adjustedOdds = Math.max(1.01, baseOdds * (1 + variation));
-      return {
-        bookmaker: bk,
-        odds: adjustedOdds.toFixed(2),
-      };
-    });
-
-    variations.sort((a, b) => parseFloat(b.odds) - parseFloat(a.odds));
+    const variations = [
+      { bookmaker: "Estimated Best", odds: (baseOdds * 1.05).toFixed(2) },
+      { bookmaker: "Market Average", odds: baseOdds.toFixed(2) },
+      { bookmaker: "Estimated Low", odds: (baseOdds * 0.95).toFixed(2) },
+    ];
 
     return {
       market: market.market,
@@ -595,6 +814,10 @@ export function generateOddsComparison(markets: PredictionMarket[]): any[] {
     };
   });
 }
+
+// ============================================
+// LONGSHOT ACCUMULATOR
+// ============================================
 
 export interface LongshotLeg {
   matchId: number;
@@ -708,18 +931,20 @@ export function generateLongshotAccumulator(predictions: MatchPrediction[]): Lon
     combinedOdds *= parseFloat(leg.odds);
   }
 
-  const potentialReturn = combinedOdds.toFixed(2);
-
   return {
     legs,
     combinedOdds: combinedOdds.toFixed(2),
     totalLegs: legs.length,
-    potentialReturn,
+    potentialReturn: combinedOdds.toFixed(2),
     generatedDate: new Date().toISOString().split("T")[0],
     daySpread: usedDates.size,
     leagueCount: usedLeagues.size,
   };
 }
+
+// ============================================
+// DAILY PICKS
+// ============================================
 
 export async function generateDailyPicks(predictions: MatchPrediction[]): Promise<any[]> {
   if (!predictions || predictions.length === 0) return [];

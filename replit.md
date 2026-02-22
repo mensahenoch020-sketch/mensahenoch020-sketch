@@ -7,7 +7,8 @@ AI-powered football match prediction and analysis platform using real-time Footb
 - **Frontend**: React + Vite + TailwindCSS + Shadcn UI with dark/light theme toggle
 - **Backend**: Express.js with Football Data API integration
 - **Database**: PostgreSQL via Drizzle ORM
-- **AI**: Built-in AI Advisor with natural language analysis powered by statistical models (no external API needed) + Statistical prediction engine
+- **AI**: Built-in AI Advisor with natural language analysis powered by REAL league standings data + statistical models (no external API needed)
+- **Data**: Real team stats from Football Data API standings (190+ teams, 12 competitions) — position, goals scored/conceded, win rates used for predictions
 - **Auth**: Replit Auth integration
 - **PWA**: Service worker, manifest, installable on mobile
 

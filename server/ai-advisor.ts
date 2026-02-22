@@ -5,6 +5,110 @@ interface ChatMessage {
   content: string;
 }
 
+// ============================================
+// DATE FILTERING SYSTEM
+// ============================================
+
+function getLocalDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function getMatchDateKey(matchDate: string): string {
+  const d = new Date(matchDate);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function getMatchLocalDateKey(matchDate: string): string {
+  const d = new Date(matchDate);
+  return getLocalDateKey(d);
+}
+
+function getUTCDateKey(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function getTodayKey(): string {
+  return getUTCDateKey(new Date());
+}
+
+function getTomorrowKey(): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + 1);
+  return getUTCDateKey(d);
+}
+
+function getYesterdayKey(): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 1);
+  return getUTCDateKey(d);
+}
+
+function getWeekendKeys(): string[] {
+  const keys: string[] = [];
+  const today = new Date();
+  for (let i = 0; i <= 7; i++) {
+    const d = new Date(today);
+    d.setUTCDate(today.getUTCDate() + i);
+    const day = d.getUTCDay();
+    if (day === 0 || day === 6) {
+      keys.push(getUTCDateKey(d));
+    }
+  }
+  return keys;
+}
+
+type DateIntent = "today" | "tomorrow" | "yesterday" | "weekend" | "all";
+
+function detectDateIntent(query: string): DateIntent {
+  const q = query.toLowerCase();
+  if (/\btoday\b|\btonight\b|\btoday'?s\b|\bthis\s*evening\b/.test(q)) return "today";
+  if (/\btomorrow\b|\btomorrow'?s\b/.test(q)) return "tomorrow";
+  if (/\byesterday\b|\blast\s*night\b/.test(q)) return "yesterday";
+  if (/\bweekend\b|\bsaturday\b|\bsunday\b|\bthis\s*weekend\b/.test(q)) return "weekend";
+  return "all";
+}
+
+function filterByDate(predictions: MatchPrediction[], dateIntent: DateIntent): MatchPrediction[] {
+  if (dateIntent === "all") return predictions;
+
+  let targetKeys: string[];
+  switch (dateIntent) {
+    case "today":
+      targetKeys = [getTodayKey()];
+      break;
+    case "tomorrow":
+      targetKeys = [getTomorrowKey()];
+      break;
+    case "yesterday":
+      targetKeys = [getYesterdayKey()];
+      break;
+    case "weekend":
+      targetKeys = getWeekendKeys();
+      break;
+    default:
+      return predictions;
+  }
+
+  return predictions.filter(p => {
+    const matchKey = getMatchDateKey(p.matchDate);
+    return targetKeys.includes(matchKey);
+  });
+}
+
+function getDateLabel(dateIntent: DateIntent): string {
+  switch (dateIntent) {
+    case "today": return "today";
+    case "tomorrow": return "tomorrow";
+    case "yesterday": return "yesterday";
+    case "weekend": return "this weekend";
+    default: return "";
+  }
+}
+
+// ============================================
+// SEARCH & MATCHING
+// ============================================
+
 function findMatchesByQuery(predictions: MatchPrediction[], query: string): MatchPrediction[] {
   const q = query.toLowerCase();
   return predictions.filter(p =>
@@ -46,6 +150,10 @@ function extractPickCount(query: string): number {
   return 0;
 }
 
+// ============================================
+// INTENT DETECTION
+// ============================================
+
 function detectIntent(query: string): string {
   const q = query.toLowerCase();
 
@@ -76,6 +184,10 @@ function detectIntent(query: string): string {
   return "match_query";
 }
 
+// ============================================
+// FORMATTING HELPERS
+// ============================================
+
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr);
   return d.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -90,11 +202,11 @@ function getMatchDayLabel(dateStr: string): string {
   const today = new Date();
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const matchStart = new Date(matchDate.getFullYear(), matchDate.getMonth(), matchDate.getDate());
-  const diffDays = Math.round((matchStart.getTime() - todayStart.getTime()) / 86400000);
+  const diffDays = Math.floor((matchStart.getTime() - todayStart.getTime()) / 86400000);
 
-  if (diffDays === 0) return "today";
-  if (diffDays === 1) return "tomorrow";
-  if (diffDays === -1) return "yesterday";
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Tomorrow";
+  if (diffDays === -1) return "Yesterday";
   if (diffDays > 1 && diffDays <= 7) return matchDate.toLocaleDateString("en-US", { weekday: "long" });
   return formatDate(dateStr);
 }
@@ -106,26 +218,41 @@ function getConfidenceLabel(c: number): string {
   return "value play";
 }
 
+// ============================================
+// RESPONSE GENERATORS (all date-aware)
+// ============================================
+
 function generateGreeting(predictions: MatchPrediction[]): string {
-  const live = predictions.filter(p => p.status === "IN_PLAY");
-  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
-  const finished = predictions.filter(p => p.status === "FINISHED");
+  const todayPreds = filterByDate(predictions, "today");
+  const live = todayPreds.filter(p => p.status === "IN_PLAY");
+  const scheduled = todayPreds.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const finished = todayPreds.filter(p => p.status === "FINISHED");
   const today = getTodayString();
 
-  let msg = `Hey there! Welcome to OddsAura. I'm your football prediction advisor, here to help you find the best picks using real match data and statistical analysis.\n\n`;
-  msg += `Today is **${today}**. Here's what's happening:\n`;
+  let msg = `Hey there! Welcome to OddsAura. I'm your football prediction advisor, powered by real league standings and statistical analysis.\n\n`;
+  msg += `Today is **${today}**. Here's what's happening today:\n`;
   if (live.length > 0) msg += `- ${live.length} match${live.length > 1 ? "es" : ""} LIVE right now\n`;
-  msg += `- ${scheduled.length} upcoming match${scheduled.length !== 1 ? "es" : ""} to analyze\n`;
+  msg += `- ${scheduled.length} upcoming match${scheduled.length !== 1 ? "es" : ""} today\n`;
   if (finished.length > 0) msg += `- ${finished.length} completed match${finished.length !== 1 ? "es" : ""}\n`;
 
-  const competitions = [...new Set(predictions.map(p => p.competition))];
-  msg += `\nCovering ${competitions.length} competitions: ${competitions.slice(0, 6).join(", ")}${competitions.length > 6 ? ` and ${competitions.length - 6} more` : ""}.\n\n`;
+  const allScheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  if (allScheduled.length > scheduled.length) {
+    msg += `- ${allScheduled.length - scheduled.length} more matches in the coming days\n`;
+  }
+
+  const competitions = [...new Set(todayPreds.map(p => p.competition))];
+  if (competitions.length > 0) {
+    msg += `\nToday's competitions: ${competitions.slice(0, 6).join(", ")}${competitions.length > 6 ? ` and ${competitions.length - 6} more` : ""}.\n\n`;
+  } else {
+    msg += `\nNo matches today, but I have predictions for upcoming fixtures!\n\n`;
+  }
+
   msg += `Ask me anything! I can help with:\n`;
+  msg += `- "Today's picks" — only today's matches\n`;
+  msg += `- "Tomorrow's picks" — tomorrow's fixtures\n`;
   msg += `- Match predictions and analysis\n`;
-  msg += `- Daily top picks and recommendations\n`;
   msg += `- Explaining betting markets (BTTS, Over/Under, etc.)\n`;
-  msg += `- Finding safe bets or value picks\n`;
-  msg += `- Specific team or league analysis`;
+  msg += `- Finding safe bets or value picks`;
 
   return msg;
 }
@@ -133,6 +260,7 @@ function generateGreeting(predictions: MatchPrediction[]): string {
 function generateHelp(): string {
   return `I'm your OddsAura AI Advisor! Here's what I can do:\n\n` +
     `**Match Analysis** - Ask about any match and I'll break down the probabilities, xG data, and best picks.\n\n` +
+    `**Today's Picks** - Say "today's picks" to see picks for today only. Say "tomorrow's picks" for tomorrow.\n\n` +
     `**Daily Picks** - Say "top picks" or "daily picks" to see my strongest recommendations.\n\n` +
     `**Market Explanations** - New to betting? Ask me to explain any market like "what is BTTS?" or "how does Over/Under work?"\n\n` +
     `**Safe Picks** - Want low-risk options? Ask for "safe picks" or "bankers".\n\n` +
@@ -142,37 +270,52 @@ function generateHelp(): string {
     `Try asking: "What are your top 3 picks today?" or "Analyze Arsenal vs Chelsea"`;
 }
 
-function generateDailyPicksResponse(predictions: MatchPrediction[]): string {
-  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
-  if (scheduled.length === 0) {
-    const finished = predictions.filter(p => p.status === "FINISHED");
+function generateDailyPicksResponse(predictions: MatchPrediction[], dateIntent: DateIntent): string {
+  const filtered = filterByDate(predictions, dateIntent);
+  const dateLabel = dateIntent !== "all" ? getDateLabel(dateIntent) : "today";
+  const scheduled = filtered.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const live = filtered.filter(p => p.status === "IN_PLAY");
+  const available = [...live, ...scheduled];
+
+  if (available.length === 0) {
+    const finished = filtered.filter(p => p.status === "FINISHED");
     if (finished.length > 0) {
-      return `No upcoming matches right now, but here's a recap of today's results:\n\n` +
+      return `No upcoming matches ${dateLabel}, but here's a recap of ${dateLabel}'s results:\n\n` +
         finished.slice(0, 5).map((p, i) => {
           const score = p.score?.fullTime.home !== null ? `${p.score!.fullTime.home}-${p.score!.fullTime.away}` : "N/A";
           return `${i + 1}. **${p.homeTeam} ${score} ${p.awayTeam}** (${p.competition})`;
         }).join("\n");
     }
-    return `There are no matches scheduled right now. Check back later for fresh predictions!`;
+    if (dateIntent === "today") {
+      const tomorrowPreds = filterByDate(predictions, "tomorrow");
+      const tScheduled = tomorrowPreds.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+      if (tScheduled.length > 0) {
+        return `No matches scheduled for today. But there are **${tScheduled.length} matches tomorrow**! Ask me for "tomorrow's picks" to see them.`;
+      }
+    }
+    return `There are no matches ${dateLabel}. Check back later for fresh predictions!`;
   }
 
-  const sorted = [...scheduled].sort((a, b) => {
-    const aConf = a.markets?.[0]?.confidence || 0;
-    const bConf = b.markets?.[0]?.confidence || 0;
+  const sorted = [...available].sort((a, b) => {
+    const aConf = Math.max(...(a.markets || []).map(m => m.confidence), 0);
+    const bConf = Math.max(...(b.markets || []).map(m => m.confidence), 0);
     return bConf - aConf;
   });
 
   const topPicks = sorted.slice(0, 5);
 
   const today = getTodayString();
-  let msg = `Here are my **top picks** for ${today}, ranked by confidence:\n\n`;
+  let msg = `Here are my **top picks for ${dateLabel}** (${today}), ranked by confidence:\n\n`;
 
   topPicks.forEach((p, i) => {
-    const topMarket = p.markets?.[0];
-    const dayLabel = getMatchDayLabel(p.matchDate);
+    const sortedMarkets = [...(p.markets || [])].sort((a, b) => b.confidence - a.confidence);
+    const topMarket = sortedMarkets[0];
     const kickoff = formatDate(p.matchDate);
-    msg += `**${i + 1}. ${p.homeTeam} vs ${p.awayTeam}** (${p.competition})\n`;
-    msg += `   Kickoff: ${dayLabel}, ${kickoff}\n`;
+    const isLive = p.status === "IN_PLAY";
+    const liveScore = isLive && p.score?.fullTime.home !== null ? ` (LIVE: ${p.score!.fullTime.home}-${p.score!.fullTime.away})` : "";
+
+    msg += `**${i + 1}. ${p.homeTeam} vs ${p.awayTeam}**${liveScore} (${p.competition})\n`;
+    msg += `   Kickoff: ${isLive ? "LIVE NOW" : kickoff}\n`;
     msg += `   Win Probabilities: Home ${p.homeWinProb}% | Draw ${p.drawProb}% | Away ${p.awayWinProb}%\n`;
     if (topMarket) {
       msg += `   Pick: **${topMarket.market} — ${topMarket.pick}** @ ${topMarket.odds} (${topMarket.confidence}% confidence, ${getConfidenceLabel(topMarket.confidence)})\n\n`;
@@ -181,7 +324,7 @@ function generateDailyPicksResponse(predictions: MatchPrediction[]): string {
     }
   });
 
-  msg += `These picks are generated using Poisson distribution, Elo ratings, Monte Carlo simulations, and Bayesian analysis on real match data.\n\n`;
+  msg += `These picks are generated from real league standings, Poisson distribution, Elo ratings, and 10,000 Monte Carlo simulations.\n\n`;
   msg += `Use the **Save as Image** button to save these picks! Want me to dive deeper into any match, or say "give me 20 picks" for more?`;
 
   return msg;
@@ -202,11 +345,14 @@ function generateLiveResponse(predictions: MatchPrediction[]): string {
   return msg;
 }
 
-function generateResultsResponse(predictions: MatchPrediction[]): string {
-  const finished = predictions.filter(p => p.status === "FINISHED");
-  if (finished.length === 0) return `No completed matches to show yet today. Check back after kickoff times!`;
+function generateResultsResponse(predictions: MatchPrediction[], dateIntent: DateIntent): string {
+  const filtered = filterByDate(predictions, dateIntent !== "all" ? dateIntent : "today");
+  const finished = filtered.filter(p => p.status === "FINISHED");
+  const dateLabel = dateIntent !== "all" ? getDateLabel(dateIntent) : "today";
 
-  let msg = `**Today's Results:**\n\n`;
+  if (finished.length === 0) return `No completed matches ${dateLabel} yet. Check back after kickoff times!`;
+
+  let msg = `**Results for ${dateLabel}:**\n\n`;
   finished.slice(0, 10).forEach(p => {
     const score = p.score?.fullTime.home !== null ? `${p.score!.fullTime.home}-${p.score!.fullTime.away}` : "FT";
     const ht = p.score?.halfTime?.home !== null ? ` (HT: ${p.score!.halfTime!.home}-${p.score!.halfTime!.away})` : "";
@@ -228,7 +374,7 @@ function generateMatchAnalysis(p: MatchPrediction): string {
   const isLive = p.status === "IN_PLAY";
 
   let msg = `**${p.homeTeam} vs ${p.awayTeam}**\n`;
-  msg += `${p.competition} | ${formatDate(p.matchDate)}`;
+  msg += `${p.competition} | ${getMatchDayLabel(p.matchDate)}, ${formatDate(p.matchDate)}`;
 
   if (isFinished && p.score?.fullTime.home !== null) {
     msg += ` | **FT: ${p.score!.fullTime.home}-${p.score!.fullTime.away}**`;
@@ -262,58 +408,66 @@ function generateMatchAnalysis(p: MatchPrediction): string {
   return msg;
 }
 
-function generateBTTSResponse(predictions: MatchPrediction[]): string {
-  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+function generateBTTSResponse(predictions: MatchPrediction[], dateIntent: DateIntent): string {
+  const filtered = filterByDate(predictions, dateIntent);
+  const scheduled = filtered.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const dateLabel = dateIntent !== "all" ? ` ${getDateLabel(dateIntent)}` : "";
+
   const bttsMatches = scheduled.map(p => {
     const bttsMarket = (p.markets || []).find(m => m.market === "BTTS (GG/NG)");
     return { prediction: p, bttsMarket };
   }).filter(x => x.bttsMarket && x.bttsMarket.pick === "Yes (GG)")
     .sort((a, b) => (b.bttsMarket?.confidence || 0) - (a.bttsMarket?.confidence || 0));
 
-  if (bttsMatches.length === 0) return `I couldn't find any strong BTTS (Both Teams to Score) picks right now. This could mean most matches favor defensive setups today.`;
+  if (bttsMatches.length === 0) return `I couldn't find any strong BTTS picks${dateLabel}. This could mean most matches favor defensive setups.`;
 
-  let msg = `**Best BTTS (Both Teams to Score) Picks:**\n\n`;
-  msg += `BTTS means you're betting that both teams will score at least one goal in the match. "GG" means yes (both score), "NG" means no.\n\n`;
+  let msg = `**Best BTTS (Both Teams to Score) Picks${dateLabel}:**\n\n`;
+  msg += `BTTS means you're betting that both teams will score at least one goal. "GG" = yes, "NG" = no.\n\n`;
 
   bttsMatches.slice(0, 5).forEach((x, i) => {
     const p = x.prediction;
     const m = x.bttsMarket!;
     msg += `${i + 1}. **${p.homeTeam} vs ${p.awayTeam}** (${p.competition})\n`;
     msg += `   BTTS: Yes @ ${m.odds} — ${m.confidence}% confidence (${getConfidenceLabel(m.confidence)})\n`;
-    msg += `   Kickoff: ${formatDate(p.matchDate)}\n\n`;
+    msg += `   Kickoff: ${getMatchDayLabel(p.matchDate)}, ${formatDate(p.matchDate)}\n\n`;
   });
 
-  msg += `These are based on expected goals (xG) analysis and historical scoring patterns.`;
+  msg += `Based on real goals-per-game data and Poisson xG analysis.`;
 
   return msg;
 }
 
-function generateOverUnderResponse(predictions: MatchPrediction[]): string {
-  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+function generateOverUnderResponse(predictions: MatchPrediction[], dateIntent: DateIntent): string {
+  const filtered = filterByDate(predictions, dateIntent);
+  const scheduled = filtered.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const dateLabel = dateIntent !== "all" ? ` ${getDateLabel(dateIntent)}` : "";
+
   const overMatches = scheduled.map(p => {
     const ouMarket = (p.markets || []).find(m => m.market === "Over/Under 2.5");
     return { prediction: p, ouMarket };
   }).filter(x => x.ouMarket)
     .sort((a, b) => (b.ouMarket?.confidence || 0) - (a.ouMarket?.confidence || 0));
 
-  if (overMatches.length === 0) return `No Over/Under picks available right now.`;
+  if (overMatches.length === 0) return `No Over/Under picks available${dateLabel}.`;
 
-  let msg = `**Over/Under 2.5 Goals Analysis:**\n\n`;
-  msg += `"Over 2.5" means 3 or more goals in the match. "Under 2.5" means 2 or fewer goals.\n\n`;
+  let msg = `**Over/Under 2.5 Goals Analysis${dateLabel}:**\n\n`;
+  msg += `"Over 2.5" = 3+ goals. "Under 2.5" = 2 or fewer goals.\n\n`;
 
   overMatches.slice(0, 5).forEach((x, i) => {
     const p = x.prediction;
     const m = x.ouMarket!;
     msg += `${i + 1}. **${p.homeTeam} vs ${p.awayTeam}** (${p.competition})\n`;
     msg += `   ${m.pick} @ ${m.odds} — ${m.confidence}% confidence (${getConfidenceLabel(m.confidence)})\n`;
-    msg += `   Kickoff: ${formatDate(p.matchDate)}\n\n`;
+    msg += `   Kickoff: ${getMatchDayLabel(p.matchDate)}, ${formatDate(p.matchDate)}\n\n`;
   });
 
   return msg;
 }
 
-function generateSafePicksResponse(predictions: MatchPrediction[]): string {
-  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+function generateSafePicksResponse(predictions: MatchPrediction[], dateIntent: DateIntent): string {
+  const filtered = filterByDate(predictions, dateIntent);
+  const scheduled = filtered.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const dateLabel = dateIntent !== "all" ? ` ${getDateLabel(dateIntent)}` : "";
 
   const safePicks = scheduled.map(p => {
     const dcMarket = (p.markets || []).find(m => m.market === "Double Chance");
@@ -323,26 +477,28 @@ function generateSafePicksResponse(predictions: MatchPrediction[]): string {
   }).filter(x => x.market && x.market.confidence >= 65)
     .sort((a, b) => (b.market?.confidence || 0) - (a.market?.confidence || 0));
 
-  if (safePicks.length === 0) return `No particularly safe picks stand out today. The matches look quite balanced. Consider waiting for better opportunities or using smaller stakes.`;
+  if (safePicks.length === 0) return `No particularly safe picks stand out${dateLabel}. The matches look quite balanced.`;
 
-  let msg = `**Safe Picks (Low Risk):**\n\n`;
-  msg += `These are picks with high confidence levels — lower odds but more likely to win.\n\n`;
+  let msg = `**Safe Picks (Low Risk)${dateLabel}:**\n\n`;
+  msg += `These are picks with high confidence — lower odds but more likely to win.\n\n`;
 
   safePicks.slice(0, 5).forEach((x, i) => {
     const p = x.prediction;
     const m = x.market!;
     msg += `${i + 1}. **${p.homeTeam} vs ${p.awayTeam}** (${p.competition})\n`;
     msg += `   ${m.market}: ${m.pick} @ ${m.odds} — ${m.confidence}% confidence (${getConfidenceLabel(m.confidence)})\n`;
-    msg += `   Kickoff: ${formatDate(p.matchDate)}\n\n`;
+    msg += `   Kickoff: ${getMatchDayLabel(p.matchDate)}, ${formatDate(p.matchDate)}\n\n`;
   });
 
-  msg += `Remember: lower odds = lower risk but lower returns. These are good for accumulators or bankroll building.`;
+  msg += `Lower odds = lower risk but lower returns. Good for accumulators or bankroll building.`;
 
   return msg;
 }
 
-function generateValuePicksResponse(predictions: MatchPrediction[]): string {
-  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+function generateValuePicksResponse(predictions: MatchPrediction[], dateIntent: DateIntent): string {
+  const filtered = filterByDate(predictions, dateIntent);
+  const scheduled = filtered.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const dateLabel = dateIntent !== "all" ? ` ${getDateLabel(dateIntent)}` : "";
 
   const valuePicks = scheduled.flatMap(p =>
     (p.markets || []).filter(m => {
@@ -355,35 +511,37 @@ function generateValuePicksResponse(predictions: MatchPrediction[]): string {
     return bValue - aValue;
   });
 
-  if (valuePicks.length === 0) return `No standout value picks today. The odds don't seem to offer great value right now.`;
+  if (valuePicks.length === 0) return `No standout value picks${dateLabel}. The odds don't offer great value right now.`;
 
-  let msg = `**Value Picks (Higher Odds):**\n\n`;
-  msg += `These picks have decent probability but offer better returns. Higher risk, higher reward!\n\n`;
+  let msg = `**Value Picks (Higher Odds)${dateLabel}:**\n\n`;
+  msg += `Higher risk, higher reward!\n\n`;
 
   valuePicks.slice(0, 5).forEach((x, i) => {
     const p = x.prediction;
     const m = x.market;
     msg += `${i + 1}. **${p.homeTeam} vs ${p.awayTeam}** (${p.competition})\n`;
     msg += `   ${m.market}: ${m.pick} @ ${m.odds} — ${m.confidence}% confidence\n`;
-    msg += `   Kickoff: ${formatDate(p.matchDate)}\n\n`;
+    msg += `   Kickoff: ${getMatchDayLabel(p.matchDate)}, ${formatDate(p.matchDate)}\n\n`;
   });
 
-  msg += `Value picks are about finding situations where the odds are better than the actual probability suggests. Use smaller stakes on these.`;
+  msg += `Value picks = odds are better than the actual probability suggests. Consider smaller stakes.`;
 
   return msg;
 }
 
-function generateHighConfidenceResponse(predictions: MatchPrediction[]): string {
-  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+function generateHighConfidenceResponse(predictions: MatchPrediction[], dateIntent: DateIntent): string {
+  const filtered = filterByDate(predictions, dateIntent);
+  const scheduled = filtered.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const dateLabel = dateIntent !== "all" ? ` ${getDateLabel(dateIntent)}` : "";
 
   const highConf = scheduled.flatMap(p =>
     (p.markets || []).slice(0, 3).map(m => ({ prediction: p, market: m }))
   ).filter(x => x.market.confidence >= 65)
     .sort((a, b) => b.market.confidence - a.market.confidence);
 
-  if (highConf.length === 0) return `No very high confidence picks today. The matches are quite unpredictable. Consider being cautious with your stakes.`;
+  if (highConf.length === 0) return `No very high confidence picks${dateLabel}. The matches are quite unpredictable.`;
 
-  let msg = `**Highest Confidence Picks:**\n\n`;
+  let msg = `**Highest Confidence Picks${dateLabel}:**\n\n`;
 
   highConf.slice(0, 6).forEach((x, i) => {
     const p = x.prediction;
@@ -392,22 +550,32 @@ function generateHighConfidenceResponse(predictions: MatchPrediction[]): string 
     msg += `   ${m.market}: ${m.pick} @ ${m.odds} — **${m.confidence}% confidence**\n\n`;
   });
 
-  msg += `These are our statistically strongest picks based on 5,000 Monte Carlo simulations and Bayesian analysis.`;
+  msg += `These are our statistically strongest picks based on 10,000 Monte Carlo simulations and real league data.`;
 
   return msg;
 }
 
-function generateUpcomingResponse(predictions: MatchPrediction[]): string {
-  const live = predictions.filter(p => p.status === "IN_PLAY");
-  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
-  const finished = predictions.filter(p => p.status === "FINISHED");
+function generateUpcomingResponse(predictions: MatchPrediction[], dateIntent: DateIntent): string {
+  const filtered = filterByDate(predictions, dateIntent);
+  const dateLabel = dateIntent !== "all" ? getDateLabel(dateIntent) : "";
+
+  const live = filtered.filter(p => p.status === "IN_PLAY");
+  const scheduled = filtered.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const finished = filtered.filter(p => p.status === "FINISHED");
 
   if (live.length === 0 && scheduled.length === 0 && finished.length === 0) {
-    return `No matches in the current window. Check back for new fixtures!`;
+    if (dateIntent === "today") {
+      const tomorrow = filterByDate(predictions, "tomorrow");
+      const tScheduled = tomorrow.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+      if (tScheduled.length > 0) {
+        return `No matches today! But there are **${tScheduled.length} matches tomorrow**. Ask me for "tomorrow's picks" to see them.`;
+      }
+    }
+    return `No matches ${dateLabel || "in the current window"}. Check back for new fixtures!`;
   }
 
   const today = getTodayString();
-  let msg = `**Matches — ${today}:**\n\n`;
+  let msg = `**Matches ${dateLabel ? "for " + dateLabel : ""} — ${today}:**\n\n`;
 
   if (live.length > 0) {
     msg += `**LIVE NOW:**\n`;
@@ -423,7 +591,8 @@ function generateUpcomingResponse(predictions: MatchPrediction[]): string {
     msg += `**Upcoming (${scheduled.length} matches):**\n\n`;
 
     sorted.slice(0, 15).forEach((p, i) => {
-      const topPick = p.markets?.[0];
+      const sortedMarkets = [...(p.markets || [])].sort((a, b) => b.confidence - a.confidence);
+      const topPick = sortedMarkets[0];
       msg += `**${i + 1}. ${p.homeTeam} vs ${p.awayTeam}** — ${p.competition}\n`;
       msg += `   Kickoff: ${formatDate(p.matchDate)}\n`;
       msg += `   Home ${p.homeWinProb}% | Draw ${p.drawProb}% | Away ${p.awayWinProb}%\n`;
@@ -436,7 +605,7 @@ function generateUpcomingResponse(predictions: MatchPrediction[]): string {
     if (sorted.length > 15) msg += `...and ${sorted.length - 15} more matches.\n\n`;
   }
 
-  if (finished.length > 0 && scheduled.length === 0) {
+  if (finished.length > 0) {
     msg += `**Completed (${finished.length} matches):**\n`;
     finished.slice(0, 10).forEach((p, i) => {
       const score = p.score?.fullTime.home !== null ? `${p.score!.fullTime.home}-${p.score!.fullTime.away}` : "FT";
@@ -464,16 +633,17 @@ function generateLeagueResponse(predictions: MatchPrediction[], query: string): 
 
   const leagueMatches = predictions.filter(p => p.competition.toLowerCase().includes(leagueName.toLowerCase()));
 
-  if (leagueMatches.length === 0) return `No ${leagueName || "matches for that league"} found in the current fixture window. They might not be playing today.`;
+  if (leagueMatches.length === 0) return `No ${leagueName || "matches for that league"} found in the current fixture window.`;
 
   let msg = `**${leagueName} Matches:**\n\n`;
 
   leagueMatches.forEach(p => {
+    const dayLabel = getMatchDayLabel(p.matchDate);
     const status = p.status === "FINISHED" && p.score?.fullTime.home !== null
       ? `FT: ${p.score!.fullTime.home}-${p.score!.fullTime.away}`
       : p.status === "IN_PLAY" && p.score?.fullTime.home !== null
         ? `LIVE: ${p.score!.fullTime.home}-${p.score!.fullTime.away}`
-        : formatDate(p.matchDate);
+        : `${dayLabel}, ${formatDate(p.matchDate)}`;
 
     msg += `**${p.homeTeam} vs ${p.awayTeam}** | ${status}\n`;
     msg += `Home ${p.homeWinProb}% | Draw ${p.drawProb}% | Away ${p.awayWinProb}% | Confidence: ${p.overallConfidence}\n`;
@@ -487,11 +657,13 @@ function generateLeagueResponse(predictions: MatchPrediction[], query: string): 
   return msg;
 }
 
-function generateCleanSheetResponse(predictions: MatchPrediction[]): string {
-  let msg = `**Clean Sheet Analysis:**\n\n`;
-  msg += `A clean sheet means a team doesn't concede any goals. Here are the matches where a clean sheet looks most likely:\n\n`;
+function generateCleanSheetResponse(predictions: MatchPrediction[], dateIntent: DateIntent): string {
+  const filtered = filterByDate(predictions, dateIntent);
+  const scheduled = filtered.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const dateLabel = dateIntent !== "all" ? ` ${getDateLabel(dateIntent)}` : "";
 
-  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  let msg = `**Clean Sheet Analysis${dateLabel}:**\n\n`;
+  msg += `A clean sheet means a team doesn't concede any goals.\n\n`;
 
   const csData = scheduled.map(p => {
     const probGap = Math.abs(p.homeWinProb - p.awayWinProb);
@@ -500,12 +672,13 @@ function generateCleanSheetResponse(predictions: MatchPrediction[]): string {
   }).filter(x => x.probGap > 20)
     .sort((a, b) => b.probGap - a.probGap);
 
-  if (csData.length === 0) return `No strong clean sheet candidates today. Most matches look fairly even, so both teams are likely to score.`;
+  if (csData.length === 0) return `No strong clean sheet candidates${dateLabel}. Most matches look fairly even.`;
 
   csData.slice(0, 5).forEach((x, i) => {
     const p = x.prediction;
     msg += `${i + 1}. **${p.homeTeam} vs ${p.awayTeam}** (${p.competition})\n`;
-    msg += `   ${x.dominant} are strong favorites (${Math.max(p.homeWinProb, p.awayWinProb)}%) — good clean sheet candidate\n\n`;
+    msg += `   ${x.dominant} are strong favorites (${Math.max(p.homeWinProb, p.awayWinProb)}%) — good clean sheet candidate\n`;
+    msg += `   Kickoff: ${getMatchDayLabel(p.matchDate)}, ${formatDate(p.matchDate)}\n\n`;
   });
 
   return msg;
@@ -534,26 +707,29 @@ function generateCorrectScoreResponse(predictions: MatchPrediction[], query: str
     msg += `Most likely scoreline: **${csMarket.pick}** (${csMarket.confidence}% probability)\n\n`;
   }
   msg += `Win probabilities: ${match.homeTeam} ${match.homeWinProb}% | Draw ${match.drawProb}% | ${match.awayTeam} ${match.awayWinProb}%\n\n`;
-  msg += `This is calculated using Poisson distribution based on expected goals (xG) for each team.`;
+  msg += `Calculated using Poisson distribution based on real goals-per-game data.`;
 
   return msg;
 }
 
-function generateAccumulatorResponse(predictions: MatchPrediction[]): string {
-  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
-  if (scheduled.length < 3) return `Not enough upcoming matches to build a good accumulator right now.`;
+function generateAccumulatorResponse(predictions: MatchPrediction[], dateIntent: DateIntent): string {
+  const filtered = filterByDate(predictions, dateIntent);
+  const scheduled = filtered.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const dateLabel = dateIntent !== "all" ? ` ${getDateLabel(dateIntent)}` : "";
+
+  if (scheduled.length < 3) return `Not enough upcoming matches to build a good accumulator${dateLabel}.`;
 
   const safePicks = scheduled.flatMap(p =>
     (p.markets || []).filter(m => m.confidence >= 60).slice(0, 1).map(m => ({ prediction: p, market: m }))
   ).sort((a, b) => b.market.confidence - a.market.confidence);
 
-  if (safePicks.length < 3) return `Not enough high-confidence picks to build a reliable accumulator today.`;
+  if (safePicks.length < 3) return `Not enough high-confidence picks to build a reliable accumulator${dateLabel}.`;
 
   const accaLegs = safePicks.slice(0, 5);
   let combinedOdds = 1;
   accaLegs.forEach(x => { combinedOdds *= parseFloat(x.market.odds); });
 
-  let msg = `**Suggested Accumulator (${accaLegs.length} legs):**\n\n`;
+  let msg = `**Suggested Accumulator (${accaLegs.length} legs)${dateLabel}:**\n\n`;
 
   accaLegs.forEach((x, i) => {
     msg += `${i + 1}. **${x.prediction.homeTeam} vs ${x.prediction.awayTeam}** (${x.prediction.competition})\n`;
@@ -562,7 +738,7 @@ function generateAccumulatorResponse(predictions: MatchPrediction[]): string {
 
   msg += `**Combined Odds: ${combinedOdds.toFixed(2)}**\n`;
   msg += `A $10 stake would return **$${(10 * combinedOdds).toFixed(2)}**\n\n`;
-  msg += `Remember: accumulators are fun but risky — all legs must win. Consider starting with doubles or trebles.`;
+  msg += `Accumulators are fun but risky — all legs must win. Consider starting with doubles or trebles.`;
 
   return msg;
 }
@@ -597,25 +773,35 @@ function explainMarket(query: string): string {
 
 function generateBulkPicksResponse(predictions: MatchPrediction[], query: string): string {
   const requestedCount = extractPickCount(query) || 10;
-  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
-  const live = predictions.filter(p => p.status === "IN_PLAY");
+  const dateIntent = detectDateIntent(query);
+  const filtered = filterByDate(predictions, dateIntent);
+  const dateLabel = dateIntent !== "all" ? getDateLabel(dateIntent) : "";
+
+  const scheduled = filtered.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const live = filtered.filter(p => p.status === "IN_PLAY");
   const available = [...live, ...scheduled];
 
   if (available.length === 0) {
-    const finished = predictions.filter(p => p.status === "FINISHED");
+    const finished = filtered.filter(p => p.status === "FINISHED");
     if (finished.length > 0) {
-      let msg = `No upcoming matches right now, but here are today's completed results:\n\n`;
+      let msg = `No upcoming matches ${dateLabel}, but here are the completed results:\n\n`;
       finished.slice(0, 10).forEach((p, i) => {
         const score = p.score?.fullTime.home !== null ? `${p.score!.fullTime.home}-${p.score!.fullTime.away}` : "FT";
         msg += `${i + 1}. **${p.homeTeam} ${score} ${p.awayTeam}** (${p.competition})\n`;
       });
       return msg;
     }
-    return `No matches available right now. Check back later for new fixtures and picks!`;
+    if (dateIntent === "today") {
+      const allScheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+      if (allScheduled.length > 0) {
+        return `No matches today for picks. But there are **${allScheduled.length} upcoming matches** in the coming days. Try "tomorrow's picks" or just "give me picks" without a date filter.`;
+      }
+    }
+    return `No matches available ${dateLabel}. Check back later for new fixtures and picks!`;
   }
 
   const allPicks = available.flatMap(p =>
-    (p.markets || []).slice(0, 2).map(m => ({ prediction: p, market: m }))
+    [...(p.markets || [])].sort((a, b) => b.confidence - a.confidence).slice(0, 2).map(m => ({ prediction: p, market: m }))
   ).sort((a, b) => b.market.confidence - a.market.confidence);
 
   const seen = new Set<number>();
@@ -628,13 +814,13 @@ function generateBulkPicksResponse(predictions: MatchPrediction[], query: string
     if (uniquePicks.length >= requestedCount) break;
   }
 
-  if (uniquePicks.length === 0) return `I have matches loaded but no strong picks to recommend right now. Try asking about a specific team or league!`;
+  if (uniquePicks.length === 0) return `I have matches loaded but no strong picks to recommend ${dateLabel}. Try asking about a specific team or league!`;
 
   let combinedOdds = 1;
   uniquePicks.forEach(x => { combinedOdds *= parseFloat(x.market.odds) || 1; });
 
   const today = getTodayString();
-  let msg = `Here are **${uniquePicks.length} picks** (${today}):\n\n`;
+  let msg = `Here are **${uniquePicks.length} picks${dateLabel ? " for " + dateLabel : ""}** (${today}):\n\n`;
 
   uniquePicks.forEach((x, i) => {
     const p = x.prediction;
@@ -653,7 +839,7 @@ function generateBulkPicksResponse(predictions: MatchPrediction[], query: string
   msg += `**Combined Odds:** ${combinedOdds.toFixed(2)}\n`;
   msg += `**Potential Return (on $10):** $${(10 * combinedOdds).toFixed(2)}\n\n`;
   msg += `Use the **Save as Image** button below to save these picks!\n`;
-  msg += `Want me to adjust these? I can filter by league, market type, or confidence level.`;
+  msg += `Want me to adjust? I can filter by league, market type, or confidence level.`;
 
   return msg;
 }
@@ -668,11 +854,12 @@ function generateGenericMatchResponse(predictions: MatchPrediction[], query: str
 
     let msg = `I found ${matches.length} matches related to your search:\n\n`;
     matches.slice(0, 5).forEach((p, i) => {
+      const dayLabel = getMatchDayLabel(p.matchDate);
       const status = p.status === "FINISHED" && p.score?.fullTime.home !== null
         ? `FT: ${p.score!.fullTime.home}-${p.score!.fullTime.away}`
         : p.status === "IN_PLAY"
           ? "LIVE"
-          : formatDate(p.matchDate);
+          : `${dayLabel}, ${formatDate(p.matchDate)}`;
 
       msg += `${i + 1}. **${p.homeTeam} vs ${p.awayTeam}** — ${p.competition} | ${status}\n`;
       msg += `   Home ${p.homeWinProb}% | Draw ${p.drawProb}% | Away ${p.awayWinProb}%\n`;
@@ -684,9 +871,10 @@ function generateGenericMatchResponse(predictions: MatchPrediction[], query: str
     return msg;
   }
 
-  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const todayPreds = filterByDate(predictions, "today");
+  const scheduled = todayPreds.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
   if (scheduled.length > 0) {
-    let msg = `I couldn't find a specific match for "${query}", but here's a quick look at today's fixtures:\n\n`;
+    let msg = `I couldn't find a specific match for "${query}", but here are today's fixtures:\n\n`;
     scheduled.slice(0, 5).forEach((p, i) => {
       const top = p.markets?.[0];
       msg += `${i + 1}. **${p.homeTeam} vs ${p.awayTeam}** (${p.competition})\n`;
@@ -694,12 +882,16 @@ function generateGenericMatchResponse(predictions: MatchPrediction[], query: str
       if (top) msg += `   Top pick: ${top.pick} (${top.confidence}%)\n`;
       msg += `\n`;
     });
-    msg += `Try searching by team name, league name, or ask for "top picks" for my best recommendations!`;
+    msg += `Try searching by team name, league name, or ask for "top picks"!`;
     return msg;
   }
 
   return `I don't have match data for that specific query right now. Try asking about:\n- Today's top picks\n- A specific team (e.g., "Arsenal")\n- A league (e.g., "Premier League")\n- Market explanations (e.g., "what is BTTS?")\n\nOr just say "help" to see everything I can do!`;
 }
+
+// ============================================
+// MAIN EXPORT
+// ============================================
 
 export function generateAIResponse(
   query: string,
@@ -707,6 +899,7 @@ export function generateAIResponse(
   _chatHistory: ChatMessage[]
 ): string {
   const intent = detectIntent(query);
+  const dateIntent = detectDateIntent(query);
 
   switch (intent) {
     case "greeting":
@@ -714,34 +907,34 @@ export function generateAIResponse(
     case "help":
       return generateHelp();
     case "daily_picks":
-      return generateDailyPicksResponse(predictions);
+      return generateDailyPicksResponse(predictions, dateIntent !== "all" ? dateIntent : "today");
     case "live":
       return generateLiveResponse(predictions);
     case "results":
-      return generateResultsResponse(predictions);
+      return generateResultsResponse(predictions, dateIntent);
     case "btts":
-      return generateBTTSResponse(predictions);
+      return generateBTTSResponse(predictions, dateIntent);
     case "over_under":
-      return generateOverUnderResponse(predictions);
+      return generateOverUnderResponse(predictions, dateIntent);
     case "safe_picks":
-      return generateSafePicksResponse(predictions);
+      return generateSafePicksResponse(predictions, dateIntent);
     case "value_picks":
-      return generateValuePicksResponse(predictions);
+      return generateValuePicksResponse(predictions, dateIntent);
     case "high_confidence":
-      return generateHighConfidenceResponse(predictions);
+      return generateHighConfidenceResponse(predictions, dateIntent);
     case "upcoming":
-      return generateUpcomingResponse(predictions);
+      return generateUpcomingResponse(predictions, dateIntent !== "all" ? dateIntent : "today");
     case "league_specific":
       return generateLeagueResponse(predictions, query);
     case "explain_market":
     case "explain_betting":
       return explainMarket(query);
     case "clean_sheet":
-      return generateCleanSheetResponse(predictions);
+      return generateCleanSheetResponse(predictions, dateIntent);
     case "correct_score":
       return generateCorrectScoreResponse(predictions, query);
     case "accumulator":
-      return generateAccumulatorResponse(predictions);
+      return generateAccumulatorResponse(predictions, dateIntent);
     case "bulk_picks":
       return generateBulkPicksResponse(predictions, query);
     case "compare":
