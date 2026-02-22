@@ -36,28 +36,42 @@ function findBestMatch(predictions: MatchPrediction[], query: string): MatchPred
   return bestScore > 0 ? best : null;
 }
 
+function extractPickCount(query: string): number {
+  const match = query.match(/(\d+)\s*(pick|bet|selection|tip|game|match)/i);
+  if (match) return Math.min(parseInt(match[1]), 30);
+  const wordNums: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, fifteen: 15, twenty: 20 };
+  for (const [word, num] of Object.entries(wordNums)) {
+    if (query.toLowerCase().includes(word)) return num;
+  }
+  return 0;
+}
+
 function detectIntent(query: string): string {
   const q = query.toLowerCase();
 
   if (/greet|hello|hi|hey|howdy|good\s*(morning|evening|afternoon)|what'?s up|sup/.test(q)) return "greeting";
   if (/help|what can you|how do|explain|tutorial|guide|how does/.test(q)) return "help";
-  if (/daily\s*pick|top\s*pick|best\s*pick|recommend|suggestion|what.*bet|what.*back|tip/.test(q)) return "daily_picks";
-  if (/live|in.?play|playing\s*now|happening\s*now|current/.test(q)) return "live";
-  if (/result|score|finish|end|how did|who won|final/.test(q)) return "results";
   if (/accumulator|acca|multi|parlay|longshot|combo\s*bet/.test(q)) return "accumulator";
   if (/btts|both\s*teams?\s*to\s*score|gg|ng/.test(q)) return "btts";
   if (/over|under|goals?\s*line|total\s*goals|o\/u|ou/.test(q)) return "over_under";
+  if (/what.*market|explain.*market|1x2|double\s*chance|handicap|asian/.test(q)) return "explain_market";
+  if (/how.*work|what.*mean|beginner|new\s*to/.test(q)) return "explain_betting";
+  if (/clean\s*sheet|shut\s*out|nil|zero|no\s*goal/.test(q)) return "clean_sheet";
+  if (/correct\s*score|exact\s*score|scoreline|final\s*score/.test(q)) return "correct_score";
+
+  if (extractPickCount(q) > 0) return "bulk_picks";
+  if (/give\s*me.*pick|make.*bet\s*slip|build.*slip|create.*slip|pick.*for\s*me|picks\s*for/i.test(q)) return "bulk_picks";
+
+  if (/daily\s*pick|top\s*pick|best\s*pick|recommend|suggestion|what.*bet|what.*back|tip/.test(q)) return "daily_picks";
+  if (/live|in.?play|playing\s*now|happening\s*now|current/.test(q)) return "live";
+  if (/result|score|finish|end|how did|who won|final/.test(q)) return "results";
   if (/safe|low\s*risk|secure|banker|certain|sure/.test(q)) return "safe_picks";
   if (/value|high\s*odds|risky|longshot|upset|underdog/.test(q)) return "value_picks";
   if (/compare|vs|versus|head.?to.?head|h2h|matchup|face/.test(q)) return "compare";
   if (/standing|table|league|rank|position|points/.test(q)) return "standings";
-  if (/what.*market|explain.*market|1x2|double\s*chance|handicap|asian/.test(q)) return "explain_market";
-  if (/how.*work|what.*mean|beginner|new\s*to/.test(q)) return "explain_betting";
-  if (/today|tonight|tomorrow|this\s*weekend|upcoming|next/.test(q)) return "upcoming";
+  if (/today|tonight|tomorrow|this\s*weekend|upcoming|next|game|match|fixture/.test(q)) return "upcoming";
   if (/premier\s*league|la\s*liga|serie\s*a|bundesliga|ligue\s*1|champions\s*league|europa/.test(q)) return "league_specific";
   if (/confident|strongest|best\s*confidence|most\s*likely/.test(q)) return "high_confidence";
-  if (/clean\s*sheet|shut\s*out|nil|zero|no\s*goal/.test(q)) return "clean_sheet";
-  if (/correct\s*score|exact\s*score|scoreline|final\s*score/.test(q)) return "correct_score";
 
   return "match_query";
 }
@@ -141,14 +155,14 @@ function generateDailyPicksResponse(predictions: MatchPrediction[]): string {
     msg += `   Kickoff: ${kickoff}\n`;
     msg += `   Win Probabilities: Home ${p.homeWinProb}% | Draw ${p.drawProb}% | Away ${p.awayWinProb}%\n`;
     if (topMarket) {
-      msg += `   **Best Pick: ${topMarket.market} — ${topMarket.pick}** (${topMarket.confidence}% confidence, ${getConfidenceLabel(topMarket.confidence)})\n`;
-      msg += `   Odds: ${topMarket.odds}\n\n`;
+      msg += `   Pick: **${topMarket.market} — ${topMarket.pick}** @ ${topMarket.odds} (${topMarket.confidence}% confidence, ${getConfidenceLabel(topMarket.confidence)})\n\n`;
     } else {
       msg += `   Analysis pending\n\n`;
     }
   });
 
-  msg += `These picks are generated using Poisson distribution, Elo ratings, Monte Carlo simulations, and Bayesian analysis on real match data. Want me to dive deeper into any of these matches?`;
+  msg += `These picks are generated using Poisson distribution, Elo ratings, Monte Carlo simulations, and Bayesian analysis on real match data.\n\n`;
+  msg += `Use the **Save as Image** button to save these picks! Want me to dive deeper into any match, or say "give me 20 picks" for more?`;
 
   return msg;
 }
@@ -364,23 +378,53 @@ function generateHighConfidenceResponse(predictions: MatchPrediction[]): string 
 }
 
 function generateUpcomingResponse(predictions: MatchPrediction[]): string {
+  const live = predictions.filter(p => p.status === "IN_PLAY");
   const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
-  if (scheduled.length === 0) return `No upcoming matches in the current window. Check back for new fixtures!`;
+  const finished = predictions.filter(p => p.status === "FINISHED");
 
-  const sorted = [...scheduled].sort((a, b) => new Date(a.matchDate).getTime() - new Date(b.matchDate).getTime());
+  if (live.length === 0 && scheduled.length === 0 && finished.length === 0) {
+    return `No matches in the current window. Check back for new fixtures!`;
+  }
 
-  let msg = `**Upcoming Matches:**\n\n`;
+  let msg = `**Today's Matches:**\n\n`;
 
-  sorted.slice(0, 8).forEach(p => {
-    const topPick = p.markets?.[0];
-    msg += `**${p.homeTeam} vs ${p.awayTeam}** — ${p.competition}\n`;
-    msg += `Kickoff: ${formatDate(p.matchDate)} | Confidence: ${p.overallConfidence}\n`;
-    msg += `Home ${p.homeWinProb}% | Draw ${p.drawProb}% | Away ${p.awayWinProb}%\n`;
-    if (topPick) msg += `Top pick: ${topPick.market} — ${topPick.pick} (${topPick.confidence}%)\n`;
+  if (live.length > 0) {
+    msg += `**LIVE NOW:**\n`;
+    live.forEach(p => {
+      const score = p.score?.fullTime.home !== null ? `${p.score!.fullTime.home}-${p.score!.fullTime.away}` : "In Play";
+      msg += `- **${p.homeTeam} ${score} ${p.awayTeam}** (${p.competition})\n`;
+    });
     msg += `\n`;
-  });
+  }
 
-  if (sorted.length > 8) msg += `...and ${sorted.length - 8} more matches. Ask about a specific team or league for details!`;
+  if (scheduled.length > 0) {
+    const sorted = [...scheduled].sort((a, b) => new Date(a.matchDate).getTime() - new Date(b.matchDate).getTime());
+    msg += `**Upcoming (${scheduled.length} matches):**\n\n`;
+
+    sorted.slice(0, 15).forEach((p, i) => {
+      const topPick = p.markets?.[0];
+      msg += `**${i + 1}. ${p.homeTeam} vs ${p.awayTeam}** — ${p.competition}\n`;
+      msg += `   Kickoff: ${formatDate(p.matchDate)}\n`;
+      msg += `   Home ${p.homeWinProb}% | Draw ${p.drawProb}% | Away ${p.awayWinProb}%\n`;
+      if (topPick) {
+        msg += `   **Pick: ${topPick.market} — ${topPick.pick}** @ ${topPick.odds} (${topPick.confidence}%)\n`;
+      }
+      msg += `\n`;
+    });
+
+    if (sorted.length > 15) msg += `...and ${sorted.length - 15} more matches.\n\n`;
+  }
+
+  if (finished.length > 0 && scheduled.length === 0) {
+    msg += `**Completed (${finished.length} matches):**\n`;
+    finished.slice(0, 10).forEach((p, i) => {
+      const score = p.score?.fullTime.home !== null ? `${p.score!.fullTime.home}-${p.score!.fullTime.away}` : "FT";
+      msg += `${i + 1}. **${p.homeTeam} ${score} ${p.awayTeam}** (${p.competition})\n`;
+    });
+    msg += `\n`;
+  }
+
+  msg += `Ask me for picks, analysis on any match, or say "give me 10 picks" for a quick betslip!`;
 
   return msg;
 }
@@ -530,6 +574,67 @@ function explainMarket(query: string): string {
   return `I can explain these markets:\n\n- **1X2** - Match result (home/draw/away)\n- **BTTS** - Both teams to score\n- **Over/Under** - Total goals in match\n- **Double Chance** - Two outcomes covered\n- **Asian Handicap** - Virtual head start\n- **Correct Score** - Exact scoreline\n- **HT/FT** - Half time and full time result\n\nJust ask "what is [market name]?" and I'll explain it!`;
 }
 
+function generateBulkPicksResponse(predictions: MatchPrediction[], query: string): string {
+  const requestedCount = extractPickCount(query) || 10;
+  const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
+  const live = predictions.filter(p => p.status === "IN_PLAY");
+  const available = [...live, ...scheduled];
+
+  if (available.length === 0) {
+    const finished = predictions.filter(p => p.status === "FINISHED");
+    if (finished.length > 0) {
+      let msg = `No upcoming matches right now, but here are today's completed results:\n\n`;
+      finished.slice(0, 10).forEach((p, i) => {
+        const score = p.score?.fullTime.home !== null ? `${p.score!.fullTime.home}-${p.score!.fullTime.away}` : "FT";
+        msg += `${i + 1}. **${p.homeTeam} ${score} ${p.awayTeam}** (${p.competition})\n`;
+      });
+      return msg;
+    }
+    return `No matches available right now. Check back later for new fixtures and picks!`;
+  }
+
+  const allPicks = available.flatMap(p =>
+    (p.markets || []).slice(0, 2).map(m => ({ prediction: p, market: m }))
+  ).sort((a, b) => b.market.confidence - a.market.confidence);
+
+  const seen = new Set<number>();
+  const uniquePicks: typeof allPicks = [];
+  for (const pick of allPicks) {
+    if (!seen.has(pick.prediction.matchId)) {
+      seen.add(pick.prediction.matchId);
+      uniquePicks.push(pick);
+    }
+    if (uniquePicks.length >= requestedCount) break;
+  }
+
+  if (uniquePicks.length === 0) return `I have matches loaded but no strong picks to recommend right now. Try asking about a specific team or league!`;
+
+  let combinedOdds = 1;
+  uniquePicks.forEach(x => { combinedOdds *= parseFloat(x.market.odds) || 1; });
+
+  let msg = `Here are **${uniquePicks.length} picks** from today's matches:\n\n`;
+
+  uniquePicks.forEach((x, i) => {
+    const p = x.prediction;
+    const m = x.market;
+    const kickoff = formatDate(p.matchDate);
+    const isLive = p.status === "IN_PLAY";
+    const score = isLive && p.score?.fullTime.home !== null ? ` (LIVE: ${p.score!.fullTime.home}-${p.score!.fullTime.away})` : "";
+    msg += `**${i + 1}. ${p.homeTeam} vs ${p.awayTeam}**${score}\n`;
+    msg += `   ${p.competition} | ${isLive ? "LIVE" : kickoff}\n`;
+    msg += `   Pick: **${m.market} — ${m.pick}** @ ${m.odds} (${m.confidence}% confidence)\n\n`;
+  });
+
+  msg += `---\n`;
+  msg += `**Betslip Summary:** ${uniquePicks.length} selections\n`;
+  msg += `**Combined Odds:** ${combinedOdds.toFixed(2)}\n`;
+  msg += `**Potential Return (on $10):** $${(10 * combinedOdds).toFixed(2)}\n\n`;
+  msg += `Use the **Save as Image** button below to save these picks!\n`;
+  msg += `Want me to adjust these? I can filter by league, market type, or confidence level.`;
+
+  return msg;
+}
+
 function generateGenericMatchResponse(predictions: MatchPrediction[], query: string): string {
   const match = findBestMatch(predictions, query);
   if (match) return generateMatchAnalysis(match);
@@ -614,6 +719,8 @@ export function generateAIResponse(
       return generateCorrectScoreResponse(predictions, query);
     case "accumulator":
       return generateAccumulatorResponse(predictions);
+    case "bulk_picks":
+      return generateBulkPicksResponse(predictions, query);
     case "compare":
     case "match_query":
     default:

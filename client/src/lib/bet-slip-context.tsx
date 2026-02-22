@@ -32,7 +32,6 @@ export function BetSlipProvider({ children }: { children: React.ReactNode }) {
       if (exists) return prev;
       return [...prev, item];
     });
-    setIsOpen(true);
   }, []);
 
   const removeItem = useCallback((matchId: number, market: string) => {

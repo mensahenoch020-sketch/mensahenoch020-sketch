@@ -243,8 +243,8 @@ export function BetSlip() {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-80 max-w-[calc(100vw-2rem)]" data-testid="my-picks-panel">
-      <Card className="bg-[#0a1118] border border-[#00FFA3]/25 shadow-xl shadow-[#00FFA3]/5 overflow-hidden">
+    <div className="fixed bottom-4 right-4 z-50 w-80 max-w-[calc(100vw-2rem)] max-h-[80vh] flex flex-col" data-testid="my-picks-panel">
+      <Card className="bg-[#0a1118] border border-[#00FFA3]/25 shadow-xl shadow-[#00FFA3]/5 overflow-hidden flex flex-col max-h-[80vh]">
         <button
           className="w-full flex items-center justify-between p-3 bg-[#00FFA3]/10 border-b border-[#00FFA3]/20 cursor-pointer"
           onClick={() => setIsOpen(false)}
@@ -260,7 +260,7 @@ export function BetSlip() {
           <X className="w-4 h-4 text-white/60" />
         </button>
 
-        <ScrollArea className="max-h-[50vh]">
+        <ScrollArea className="flex-1 overflow-auto" style={{ maxHeight: "40vh" }}>
           <div className="p-3 space-y-3">
             {groupedMatches.map((group) => (
               <div key={group.matchId} className="bg-white/5 rounded-lg p-2.5 border border-white/8">
