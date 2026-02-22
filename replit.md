@@ -7,7 +7,7 @@ AI-powered football match prediction and analysis platform using real-time Footb
 - **Frontend**: React + Vite + TailwindCSS + Shadcn UI with dark/light theme toggle
 - **Backend**: Express.js with Football Data API integration
 - **Database**: PostgreSQL via Drizzle ORM
-- **AI**: OpenAI-powered AI Advisor with real-time match context + Statistical prediction engine
+- **AI**: Built-in AI Advisor with natural language analysis powered by statistical models (no external API needed) + Statistical prediction engine
 - **Auth**: Replit Auth integration
 - **PWA**: Service worker, manifest, installable on mobile
 
@@ -21,7 +21,7 @@ AI-powered football match prediction and analysis platform using real-time Footb
 - Match Timeline: Goals, cards, substitutions in chronological order for finished/live matches
 - Animated SVG confidence meters on all prediction displays
 - Beginner-friendly tooltips explaining all market types (1X2, BTTS, O/U, etc.)
-- AI Advisor powered by OpenAI (gpt-5-mini) with real-time match data context, natural language conversation
+- AI Advisor powered by built-in statistical analysis engine with real-time match data, natural language conversation (no external API needed)
 - AI summaries with specific xG data, clean sheet %, BTTS %, scoring probabilities, and most likely scoreline
 - Intelligent top-3 pick selection using market categories, match profiles, and match-specific seed diversity
 - Daily Picks page with explanation panel and confidence meters
@@ -50,7 +50,8 @@ AI-powered football match prediction and analysis platform using real-time Footb
 - `client/src/pages/` - Dashboard, Match Detail, Daily Picks, Longshot Accumulator, AI Chat, Analytics, Statistics, Bankroll, Favorites, SharedPicks, Privacy Policy, Pick History, Performance Summary, Leaderboard
 - `client/src/components/` - MatchCard, BetSlip (My Picks with share link), StatsOverview, AppSidebar, OnboardingTour
 - `client/src/lib/` - bet-slip-context, theme-context, queryClient, notifications
-- `server/routes.ts` - All API endpoints + OpenAI-powered AI chat with match context
+- `server/routes.ts` - All API endpoints + AI chat with match context
+- `server/ai-advisor.ts` - Built-in AI Advisor engine with intent detection, natural language responses, and real-time match data analysis
 - `server/football-api.ts` - Football Data API client (12 competitions, 7-day fetch window, H2H, team form, match details)
 - `server/prediction-engine.ts` - Match prediction generation with beginner-friendly AI summaries + score tracking
 - `server/storage.ts` - Database operations (conversations, predictions, dailyPicks, favorites, bankroll, sharedPicks)
@@ -96,7 +97,7 @@ AI-powered football match prediction and analysis platform using real-time Footb
 - `POST /api/conversations` - Create conversation
 - `GET /api/conversations/:id` - Get conversation with messages
 - `DELETE /api/conversations/:id` - Delete conversation
-- `POST /api/conversations/:id/messages` - Send message (OpenAI streaming via SSE with match context)
+- `POST /api/conversations/:id/messages` - Send message (built-in AI advisor streaming via SSE with match context)
 
 ## Database Tables
 - `conversations` - AI chat conversations
@@ -110,7 +111,7 @@ AI-powered football match prediction and analysis platform using real-time Footb
 - `leaderboard_entries` - User rankings (username, totalPicks, correctPicks, accuracy, roi)
 
 ## User Preferences
-- AI Advisor uses OpenAI with real-time match data for natural language conversation
+- AI Advisor uses built-in statistical engine with real-time match data for natural language conversation (no external API needed)
 - Show only 3 predictions per match card (top picks)
 - AI gives its own prediction in plain language with 3 specific picks
 - "My Picks" not "Bet Slip" - minimized pill when not in use

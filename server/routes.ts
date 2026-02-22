@@ -5,18 +5,7 @@ import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { getMatches, getTopLeagueStandings, transformMatch, getHeadToHead, getTeamRecentMatches, getMatchDetails } from "./football-api";
 import { generatePrediction, generateDailyPicks, generateOddsComparison, generateLongshotAccumulator } from "./prediction-engine";
 import type { MatchPrediction } from "@shared/schema";
-import OpenAI from "openai";
-
-const openaiApiKey = process.env.OPENAI_API_KEY || process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-let openai: OpenAI | null = null;
-if (openaiApiKey) {
-  openai = new OpenAI({
-    apiKey: openaiApiKey,
-    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || undefined,
-  });
-} else {
-  console.warn("No OpenAI API key found. AI chat features will be unavailable.");
-}
+import { generateAIResponse } from "./ai-advisor";
 
 let cachedPredictions: MatchPrediction[] = [];
 let lastFetchTime = 0;
@@ -115,42 +104,6 @@ function scheduleDailyPicks() {
   }, msUntil);
 
   generateAndStoreDailyPicks();
-}
-
-function buildMatchContext(predictions: MatchPrediction[]): string {
-  if (predictions.length === 0) return "No match data is currently available.";
-
-  const liveMatches = predictions.filter(p => p.status === "IN_PLAY");
-  const scheduledMatches = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
-  const finishedMatches = predictions.filter(p => p.status === "FINISHED");
-  const competitions = Array.from(new Set(predictions.map(p => p.competition)));
-
-  let context = `MATCH DATABASE (${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}):\n`;
-  context += `Total: ${predictions.length} matches across ${competitions.length} competitions (${competitions.join(", ")})\n`;
-  context += `Live: ${liveMatches.length} | Scheduled: ${scheduledMatches.length} | Finished: ${finishedMatches.length}\n\n`;
-
-  const prioritized = [
-    ...liveMatches,
-    ...scheduledMatches.sort((a, b) => new Date(a.matchDate).getTime() - new Date(b.matchDate).getTime()),
-    ...finishedMatches.sort((a, b) => new Date(b.matchDate).getTime() - new Date(a.matchDate).getTime()),
-  ];
-
-  const matchDetails = prioritized.map(p => {
-    const score = p.score && p.score.fullTime.home !== null
-      ? `Score: ${p.score.fullTime.home}-${p.score.fullTime.away}${p.score.halfTime?.home !== null ? ` (HT: ${p.score.halfTime.home}-${p.score.halfTime.away})` : ""}`
-      : "";
-    const top3 = p.markets.slice(0, 3).map(m => `${m.market}: ${m.pick} (${m.confidence}%)`).join(" | ");
-    const date = new Date(p.matchDate).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    return `[${p.competition}] ${p.homeTeam} vs ${p.awayTeam} | ${p.status} ${score} | ${date}\n  Win%: Home ${p.homeWinProb}% Draw ${p.drawProb}% Away ${p.awayWinProb}% | Confidence: ${p.overallConfidence}\n  Top picks: ${top3}`;
-  }).join("\n\n");
-
-  context += matchDetails;
-
-  if (context.length > 12000) {
-    context = context.substring(0, 12000) + "\n\n[... additional matches available - ask about specific teams or competitions]";
-  }
-
-  return context;
 }
 
 export async function registerRoutes(
@@ -718,7 +671,6 @@ export async function registerRoutes(
       await storage.createMessage(conversationId, "user", content.trim());
 
       const predictions = await fetchAndCachePredictions();
-      const matchContext = buildMatchContext(predictions);
 
       const existingMessages = await storage.getMessagesByConversation(conversationId);
       const recentMessages = existingMessages.slice(-20);
@@ -727,36 +679,6 @@ export async function registerRoutes(
         content: m.content,
       }));
 
-      const systemPrompt = `You are OddsAura AI Advisor — an expert football prediction analyst. You have access to real-time match data, statistical predictions, and AI-generated insights.
-
-PERSONALITY:
-- Be friendly, confident, and specific in your analysis
-- Speak in plain language that beginners can understand
-- Give concrete picks with reasoning, not vague advice
-- Use numbers and probabilities to back up your opinions
-- Be honest about risk levels — don't oversell risky picks
-- When asked about specific teams or matches, reference the actual data below
-
-CAPABILITIES:
-- Analyze match predictions with win probabilities
-- Recommend specific bets with confidence levels
-- Explain betting markets (1X2, BTTS, Over/Under, etc.) in simple terms
-- Compare teams and discuss matchups
-- Provide daily top picks and value bets
-- Discuss match results and scores for finished matches
-
-CURRENT LIVE DATA:
-${matchContext}
-
-GUIDELINES:
-- Always reference specific matches, probabilities, and confidence levels from the data
-- When recommending picks, give exactly why with numbers
-- If a match is FINISHED, discuss the result and whether predictions were correct
-- If a match is IN_PLAY, mention it's live and give current score
-- For questions outside football predictions, politely redirect
-- Keep responses focused and well-structured
-- Use line breaks for readability`;
-
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
@@ -764,38 +686,20 @@ GUIDELINES:
       res.flushHeaders();
 
       try {
-        if (!openai) {
-          res.write(`data: ${JSON.stringify({ content: "AI features are not available. Please configure an OpenAI API key." })}\n\n`);
-          res.write("data: [DONE]\n\n");
-          res.end();
-          return;
-        }
-        const stream = await openai.chat.completions.create({
-          model: "gpt-5-mini",
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...chatHistory,
-          ],
-          stream: true,
-          max_completion_tokens: 8192,
-        });
+        const fullResponse = generateAIResponse(content.trim(), predictions, chatHistory);
 
-        let fullResponse = "";
-
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || "";
-          if (content) {
-            fullResponse += content;
-            res.write(`data: ${JSON.stringify({ content })}\n\n`);
-          }
+        const chunks = fullResponse.match(/.{1,8}/gs) || [fullResponse];
+        for (const chunk of chunks) {
+          res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+          await new Promise(resolve => setTimeout(resolve, 15));
         }
 
         await storage.createMessage(conversationId, "assistant", fullResponse);
         res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
         res.end();
       } catch (aiError) {
-        console.error("OpenAI error, falling back to statistical response:", aiError);
-        const fallbackResponse = `I'm having trouble connecting to my AI engine right now. Here's what I can tell you from the data:\n\n` +
+        console.error("AI Advisor error:", aiError);
+        const fallbackResponse = `I'm having a moment — let me give you the key data:\n\n` +
           predictions.slice(0, 5).map((p, i) => {
             const score = p.score && p.score.fullTime.home !== null ? ` (${p.score.fullTime.home}-${p.score.fullTime.away})` : "";
             return `${i + 1}. ${p.homeTeam} vs ${p.awayTeam}${score} — ${p.competition}\n   Home ${p.homeWinProb}% | Draw ${p.drawProb}% | Away ${p.awayWinProb}%\n   Top pick: ${p.markets[0]?.pick} (${p.markets[0]?.confidence}%)`;
