@@ -27,9 +27,10 @@ AI-powered football match prediction and analysis platform using real-time Footb
 - Intelligent top-3 pick selection using market categories, match profiles, and match-specific seed diversity
 - Daily Picks page with explanation panel and confidence meters
 - Longshot Accumulator: Daily 20-25 leg multi-bet across different days/leagues with combined odds
-- "My Picks" panel - minimized pill button, expands on tap, save-as-image (Canvas API), share link
+- "My Picks" panel - minimized pill button, expands on tap, save-as-image (Canvas API), share link, Log to Bankroll button
 - Shareable Picks: Generate unique share links for picks, viewable by anyone
-- Bankroll Tracker: Log bets, mark won/lost, track profit/loss, ROI, total staked/returned
+- Bankroll Tracker: Log picks from My Picks with one tap (no stake required), auto-resolve results from match scores, manual won/lost buttons, accuracy tracking
+- Auto-Resolve: Check Results button fetches final scores and automatically marks picks as won/lost
 - Favorite Teams: Follow teams with heart icons on match detail, dedicated favorites page
 - Onboarding Tour: Multi-step guided tour for new users on first visit
 - Dark/Light Theme Toggle: Switch between dark premium UI and light mode
