@@ -560,14 +560,137 @@ export async function registerRoutes(
 
   app.post("/api/bankroll", async (req, res) => {
     try {
-      const { matchId, matchLabel, market, pick, stake, odds } = req.body;
-      if (!matchLabel || !market || !pick || !stake || !odds) {
+      const { matchId, matchLabel, market, pick, stake, odds, confidence, matchDate } = req.body;
+      if (!matchLabel || !market || !pick) {
         return res.status(400).json({ error: "Missing required fields" });
       }
-      const entry = await storage.addBankrollEntry({ matchId, matchLabel, market, pick, stake, odds });
+      const entry = await storage.addBankrollEntry({
+        matchId: matchId || null,
+        matchLabel,
+        market,
+        pick,
+        stake: stake || "0",
+        odds: odds || "0",
+        confidence: confidence || null,
+        matchDate: matchDate || null,
+      });
       res.status(201).json(entry);
     } catch (err) {
       res.status(500).json({ error: "Failed to add entry" });
+    }
+  });
+
+  app.post("/api/bankroll/bulk", async (req, res) => {
+    try {
+      const { entries } = req.body;
+      if (!entries || !Array.isArray(entries) || entries.length === 0) {
+        return res.status(400).json({ error: "entries array required" });
+      }
+      const results = [];
+      for (const e of entries) {
+        if (!e.matchLabel || !e.market || !e.pick) continue;
+        const entry = await storage.addBankrollEntry({
+          matchId: e.matchId || null,
+          matchLabel: e.matchLabel,
+          market: e.market,
+          pick: e.pick,
+          stake: e.stake || "0",
+          odds: e.odds || "0",
+          confidence: e.confidence || null,
+          matchDate: e.matchDate || null,
+        });
+        results.push(entry);
+      }
+      res.status(201).json({ logged: results.length, entries: results });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to log picks" });
+    }
+  });
+
+  app.post("/api/bankroll/auto-resolve", async (req, res) => {
+    try {
+      const entries = await storage.getAllBankrollEntries();
+      const pending = entries.filter(e => !e.result || e.result === "pending");
+      if (pending.length === 0) {
+        return res.json({ resolved: 0 });
+      }
+
+      const matchIds = [...new Set(pending.filter(e => e.matchId).map(e => e.matchId!))];
+      let resolved = 0;
+
+      for (const matchId of matchIds) {
+        try {
+          const prediction = await generatePrediction(matchId);
+          if (!prediction || prediction.status !== "FINISHED" || !prediction.score?.fullTime || prediction.score.fullTime.home === null) {
+            continue;
+          }
+
+          const homeGoals = prediction.score.fullTime.home!;
+          const awayGoals = prediction.score.fullTime.away!;
+          const totalGoals = homeGoals + awayGoals;
+          const bttsActual = homeGoals > 0 && awayGoals > 0;
+          const actualResult = homeGoals > awayGoals ? "home" : homeGoals < awayGoals ? "away" : "draw";
+
+          const matchEntries = pending.filter(e => e.matchId === matchId);
+          for (const entry of matchEntries) {
+            let isCorrect: boolean | null = null;
+            const pickLower = entry.pick.toLowerCase();
+            const homeName = prediction.homeTeam.toLowerCase().split(" ")[0];
+            const awayName = prediction.awayTeam.toLowerCase().split(" ")[0];
+
+            if (entry.market === "1X2") {
+              const predicted = pickLower.includes("draw") ? "draw" : pickLower.includes(homeName) ? "home" : "away";
+              isCorrect = predicted === actualResult;
+            } else if (entry.market.includes("BTTS")) {
+              isCorrect = (pickLower.includes("yes") || pickLower.includes("gg")) === bttsActual;
+            } else if (entry.market === "Over/Under 2.5") {
+              isCorrect = pickLower.includes("over") ? totalGoals > 2.5 : totalGoals < 2.5;
+            } else if (entry.market === "Over/Under 1.5") {
+              isCorrect = pickLower.includes("over") ? totalGoals > 1.5 : totalGoals < 1.5;
+            } else if (entry.market === "Over/Under 3.5") {
+              isCorrect = pickLower.includes("over") ? totalGoals > 3.5 : totalGoals < 3.5;
+            } else if (entry.market === "Over/Under 4.5") {
+              isCorrect = pickLower.includes("over") ? totalGoals > 4.5 : totalGoals < 4.5;
+            } else if (entry.market === "Double Chance") {
+              if (pickLower.includes("draw")) {
+                isCorrect = actualResult === "draw" ||
+                  (pickLower.includes(homeName) && actualResult === "home") ||
+                  (pickLower.includes(awayName) && actualResult === "away");
+              } else {
+                isCorrect = actualResult !== (pickLower.includes(homeName) ? "away" : "home");
+              }
+            } else if (entry.market === "Correct Score") {
+              isCorrect = entry.pick === `${homeGoals}-${awayGoals}`;
+            } else if (entry.market === "Home Team Goals O/U 1.5") {
+              isCorrect = pickLower.includes("over") ? homeGoals > 1.5 : homeGoals < 1.5;
+            } else if (entry.market === "Away Team Goals O/U 1.5") {
+              isCorrect = pickLower.includes("over") ? awayGoals > 1.5 : awayGoals < 1.5;
+            } else if (entry.market === "Odd/Even Goals") {
+              isCorrect = pickLower === "odd" ? totalGoals % 2 === 1 : totalGoals % 2 === 0;
+            } else if (entry.market.includes("Asian Handicap -0.5")) {
+              const predicted = pickLower.includes(homeName) ? "home" : "away";
+              isCorrect = predicted === actualResult;
+            } else if (entry.market.includes("Asian Handicap -1.5")) {
+              const predicted = pickLower.includes(homeName) ? "home" : "away";
+              isCorrect = predicted === actualResult && Math.abs(homeGoals - awayGoals) >= 2;
+            }
+
+            if (isCorrect !== null) {
+              const stake = parseFloat(entry.stake || "0") || 0;
+              const odds = parseFloat(entry.odds || "0") || 0;
+              const payout = isCorrect && stake > 0 ? (stake * odds).toFixed(2) : "0";
+              await storage.updateBankrollEntry(entry.id, isCorrect ? "won" : "lost", payout);
+              resolved++;
+            }
+          }
+        } catch (err) {
+          console.error(`Auto-resolve error for match ${matchId}:`, err);
+        }
+      }
+
+      res.json({ resolved });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to auto-resolve" });
     }
   });
 
