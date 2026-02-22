@@ -86,7 +86,7 @@ export function MatchCard({ prediction }: { prediction: MatchPrediction }) {
   const isLive = prediction.status === "IN_PLAY";
   const isFinished = prediction.status === "FINISHED";
   const hasScore = prediction.score && prediction.score.fullTime.home !== null && prediction.score.fullTime.away !== null;
-  const topMarkets = prediction.markets.slice(0, 3);
+  const topMarkets = [...prediction.markets].sort((a, b) => b.confidence - a.confidence).slice(0, 3);
   const relTime = !isLive && !isFinished ? getRelativeTime(prediction.matchDate) : "";
 
   const handleAddToSlip = (e: React.MouseEvent, market: typeof prediction.markets[0]) => {

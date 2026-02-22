@@ -172,11 +172,34 @@ export function BetSlip() {
     setSaving(true);
     try {
       const canvas = drawPicksToCanvas(groupedMatches, items.length, combinedConfidence);
-      const dataUrl = canvas.toDataURL("image/png");
-      const link = document.createElement("a");
-      link.download = `my-picks-${new Date().toISOString().split("T")[0]}.png`;
-      link.href = dataUrl;
-      link.click();
+      const filename = `my-picks-${new Date().toISOString().split("T")[0]}.png`;
+
+      try {
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob failed")), "image/png");
+        });
+
+        if (navigator.share && /mobile|android|iphone/i.test(navigator.userAgent)) {
+          const file = new File([blob], filename, { type: "image/png" });
+          await navigator.share({ files: [file], title: "My Picks - OddsAura" });
+        } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        }
+      } catch {
+        const dataUrl = canvas.toDataURL("image/png");
+        const w = window.open();
+        if (w) {
+          w.document.write(`<img src="${dataUrl}" style="max-width:100%" />`);
+          w.document.title = "My Picks - Right click to save";
+        }
+      }
 
       toast({
         title: "Picks saved!",
@@ -194,6 +217,27 @@ export function BetSlip() {
     }
   }, [groupedMatches, items.length, combinedConfidence, toast]);
 
+  const copyToClipboard = async (text: string): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+
   const handleShare = useCallback(async () => {
     setSharing(true);
     try {
@@ -207,10 +251,10 @@ export function BetSlip() {
       const res = await apiRequest("POST", "/api/shared-picks", { picks });
       const data = await res.json();
       const url = `${window.location.origin}/shared/${data.shareCode}`;
-      await navigator.clipboard.writeText(url);
+      const copied = await copyToClipboard(url);
       toast({
-        title: "Link copied!",
-        description: "Share link has been copied to clipboard.",
+        title: copied ? "Link copied!" : "Share link created!",
+        description: copied ? "Share link has been copied to clipboard." : url,
       });
     } catch (err) {
       console.error("Share failed:", err);

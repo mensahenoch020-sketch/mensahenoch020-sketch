@@ -269,12 +269,36 @@ export default function AIChat() {
     setSavingImage(index);
     try {
       const canvas = drawChatPicksToCanvas(content);
-      const dataUrl = canvas.toDataURL("image/png");
-      const link = document.createElement("a");
-      link.download = `oddsaura-picks-${new Date().toISOString().split("T")[0]}.png`;
-      link.href = dataUrl;
-      link.click();
-      toast({ title: "Picks saved!", description: "Your picks have been saved as an image." });
+      const filename = `oddsaura-picks-${new Date().toISOString().split("T")[0]}.png`;
+
+      try {
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob failed")), "image/png");
+        });
+
+        if (navigator.share && /mobile|android|iphone/i.test(navigator.userAgent)) {
+          const file = new File([blob], filename, { type: "image/png" });
+          await navigator.share({ files: [file], title: "OddsAura Picks" });
+        } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        }
+      } catch {
+        const dataUrl = canvas.toDataURL("image/png");
+        const w = window.open();
+        if (w) {
+          w.document.write(`<img src="${dataUrl}" style="max-width:100%" />`);
+          w.document.title = "OddsAura Picks - Right click to save";
+        }
+      }
+
+      toast({ title: "Picks saved!", description: "Your picks image has been downloaded." });
     } catch (err) {
       console.error("Failed to save picks image:", err);
       toast({ title: "Save failed", description: "Could not save image. Please try again.", variant: "destructive" });

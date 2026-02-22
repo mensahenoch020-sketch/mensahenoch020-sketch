@@ -8,19 +8,31 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { TrendingUp, Zap, Target, Calendar, Filter, ChevronLeft, ChevronRight, Radio, HelpCircle } from "lucide-react";
 import type { MatchPrediction } from "@shared/schema";
 
+function dateToLocalKey(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function formatDateKey(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toISOString().split("T")[0];
+  return dateToLocalKey(new Date(dateStr));
+}
+
+function getLocalTodayKey(): string {
+  return dateToLocalKey(new Date());
 }
 
 function getDayLabel(dateKey: string) {
-  const d = new Date(dateKey + "T12:00:00Z");
+  const d = new Date(dateKey + "T12:00:00");
   const today = new Date();
-  const todayKey = today.toISOString().split("T")[0];
-  const tomorrow = new Date(today.getTime() + 86400000);
-  const tomorrowKey = tomorrow.toISOString().split("T")[0];
-  const yesterday = new Date(today.getTime() - 86400000);
-  const yesterdayKey = yesterday.toISOString().split("T")[0];
+  const todayKey = getLocalTodayKey();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const tomorrowKey = dateToLocalKey(tomorrow);
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const yesterdayKey = dateToLocalKey(yesterday);
 
   if (dateKey === todayKey) return { label: "Today", sub: "" };
   if (dateKey === tomorrowKey) return { label: "Tomorrow", sub: "" };
@@ -37,7 +49,7 @@ function generateDateRange(): string[] {
   for (let i = -2; i <= 7; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
-    dates.push(d.toISOString().split("T")[0]);
+    dates.push(dateToLocalKey(d));
   }
   return dates;
 }
@@ -50,7 +62,7 @@ export default function Dashboard() {
   const todayRef = useRef<HTMLButtonElement>(null);
 
   const dateStrip = useMemo(() => generateDateRange(), []);
-  const todayKey = new Date().toISOString().split("T")[0];
+  const todayKey = getLocalTodayKey();
 
   const apiRange = useMemo(() => {
     return {

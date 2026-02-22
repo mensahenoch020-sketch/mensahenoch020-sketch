@@ -81,6 +81,24 @@ function formatDate(dateStr: string): string {
   return d.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+function getTodayString(): string {
+  return new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+}
+
+function getMatchDayLabel(dateStr: string): string {
+  const matchDate = new Date(dateStr);
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const matchStart = new Date(matchDate.getFullYear(), matchDate.getMonth(), matchDate.getDate());
+  const diffDays = Math.round((matchStart.getTime() - todayStart.getTime()) / 86400000);
+
+  if (diffDays === 0) return "today";
+  if (diffDays === 1) return "tomorrow";
+  if (diffDays === -1) return "yesterday";
+  if (diffDays > 1 && diffDays <= 7) return matchDate.toLocaleDateString("en-US", { weekday: "long" });
+  return formatDate(dateStr);
+}
+
 function getConfidenceLabel(c: number): string {
   if (c >= 75) return "very strong";
   if (c >= 60) return "strong";
@@ -92,10 +110,10 @@ function generateGreeting(predictions: MatchPrediction[]): string {
   const live = predictions.filter(p => p.status === "IN_PLAY");
   const scheduled = predictions.filter(p => p.status === "SCHEDULED" || p.status === "TIMED");
   const finished = predictions.filter(p => p.status === "FINISHED");
-  const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const today = getTodayString();
 
   let msg = `Hey there! Welcome to OddsAura. I'm your football prediction advisor, here to help you find the best picks using real match data and statistical analysis.\n\n`;
-  msg += `Here's what's happening today (${today}):\n`;
+  msg += `Today is **${today}**. Here's what's happening:\n`;
   if (live.length > 0) msg += `- ${live.length} match${live.length > 1 ? "es" : ""} LIVE right now\n`;
   msg += `- ${scheduled.length} upcoming match${scheduled.length !== 1 ? "es" : ""} to analyze\n`;
   if (finished.length > 0) msg += `- ${finished.length} completed match${finished.length !== 1 ? "es" : ""}\n`;
@@ -146,13 +164,15 @@ function generateDailyPicksResponse(predictions: MatchPrediction[]): string {
 
   const topPicks = sorted.slice(0, 5);
 
-  let msg = `Here are my **top picks** for today, ranked by confidence:\n\n`;
+  const today = getTodayString();
+  let msg = `Here are my **top picks** for ${today}, ranked by confidence:\n\n`;
 
   topPicks.forEach((p, i) => {
     const topMarket = p.markets?.[0];
+    const dayLabel = getMatchDayLabel(p.matchDate);
     const kickoff = formatDate(p.matchDate);
     msg += `**${i + 1}. ${p.homeTeam} vs ${p.awayTeam}** (${p.competition})\n`;
-    msg += `   Kickoff: ${kickoff}\n`;
+    msg += `   Kickoff: ${dayLabel}, ${kickoff}\n`;
     msg += `   Win Probabilities: Home ${p.homeWinProb}% | Draw ${p.drawProb}% | Away ${p.awayWinProb}%\n`;
     if (topMarket) {
       msg += `   Pick: **${topMarket.market} — ${topMarket.pick}** @ ${topMarket.odds} (${topMarket.confidence}% confidence, ${getConfidenceLabel(topMarket.confidence)})\n\n`;
@@ -386,7 +406,8 @@ function generateUpcomingResponse(predictions: MatchPrediction[]): string {
     return `No matches in the current window. Check back for new fixtures!`;
   }
 
-  let msg = `**Today's Matches:**\n\n`;
+  const today = getTodayString();
+  let msg = `**Matches — ${today}:**\n\n`;
 
   if (live.length > 0) {
     msg += `**LIVE NOW:**\n`;
@@ -612,16 +633,18 @@ function generateBulkPicksResponse(predictions: MatchPrediction[], query: string
   let combinedOdds = 1;
   uniquePicks.forEach(x => { combinedOdds *= parseFloat(x.market.odds) || 1; });
 
-  let msg = `Here are **${uniquePicks.length} picks** from today's matches:\n\n`;
+  const today = getTodayString();
+  let msg = `Here are **${uniquePicks.length} picks** (${today}):\n\n`;
 
   uniquePicks.forEach((x, i) => {
     const p = x.prediction;
     const m = x.market;
+    const dayLabel = getMatchDayLabel(p.matchDate);
     const kickoff = formatDate(p.matchDate);
     const isLive = p.status === "IN_PLAY";
     const score = isLive && p.score?.fullTime.home !== null ? ` (LIVE: ${p.score!.fullTime.home}-${p.score!.fullTime.away})` : "";
     msg += `**${i + 1}. ${p.homeTeam} vs ${p.awayTeam}**${score}\n`;
-    msg += `   ${p.competition} | ${isLive ? "LIVE" : kickoff}\n`;
+    msg += `   ${p.competition} | ${isLive ? "LIVE" : `${dayLabel}, ${kickoff}`}\n`;
     msg += `   Pick: **${m.market} — ${m.pick}** @ ${m.odds} (${m.confidence}% confidence)\n\n`;
   });
 
