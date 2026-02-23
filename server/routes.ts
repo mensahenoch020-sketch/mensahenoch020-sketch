@@ -615,15 +615,47 @@ export async function registerRoutes(
     const matchIds = [...new Set(pending.filter(e => e.matchId).map(e => e.matchId!))];
     let resolved = 0;
 
+    const predictions = await fetchAndCachePredictions();
+    
     for (const matchId of matchIds) {
       try {
-        const prediction = await generatePrediction(matchId);
-        if (!prediction || prediction.status !== "FINISHED" || !prediction.score?.fullTime || prediction.score.fullTime.home === null) {
+        const cachedPred = predictions.find(p => p.matchId === matchId);
+        let matchStatus: string | undefined;
+        let homeGoalsRaw: number | null = null;
+        let awayGoalsRaw: number | null = null;
+        let homeTeamName = "";
+        let awayTeamName = "";
+
+        if (cachedPred && cachedPred.status === "FINISHED" && cachedPred.score?.fullTime && cachedPred.score.fullTime.home !== null) {
+          matchStatus = cachedPred.status;
+          homeGoalsRaw = cachedPred.score.fullTime.home;
+          awayGoalsRaw = cachedPred.score.fullTime.away;
+          homeTeamName = cachedPred.homeTeam;
+          awayTeamName = cachedPred.awayTeam;
+        } else if (cachedPred && cachedPred.status !== "FINISHED") {
+          console.log(`[AutoResolve] Match ${matchId} not finished yet (status: ${cachedPred.status})`);
+          continue;
+        } else {
+          await new Promise(r => setTimeout(r, 7000));
+          const matchData = await getMatchDetails(matchId);
+          if (!matchData) {
+            console.log(`[AutoResolve] Match ${matchId}: could not fetch data`);
+            continue;
+          }
+          matchStatus = matchData.status;
+          homeGoalsRaw = matchData.score?.fullTime?.home ?? null;
+          awayGoalsRaw = matchData.score?.fullTime?.away ?? null;
+          homeTeamName = matchData.homeTeam?.name || matchData.homeTeam?.shortName || "";
+          awayTeamName = matchData.awayTeam?.name || matchData.awayTeam?.shortName || "";
+        }
+
+        if (matchStatus !== "FINISHED" || homeGoalsRaw === null || awayGoalsRaw === null) {
+          console.log(`[AutoResolve] Match ${matchId} not finished yet (status: ${matchStatus || "unknown"})`);
           continue;
         }
 
-        const homeGoals = prediction.score.fullTime.home!;
-        const awayGoals = prediction.score.fullTime.away!;
+        const homeGoals = homeGoalsRaw;
+        const awayGoals = awayGoalsRaw;
         const totalGoals = homeGoals + awayGoals;
         const bttsActual = homeGoals > 0 && awayGoals > 0;
         const actualResult = homeGoals > awayGoals ? "home" : homeGoals < awayGoals ? "away" : "draw";
@@ -632,8 +664,8 @@ export async function registerRoutes(
         for (const entry of matchEntries) {
           let isCorrect: boolean | null = null;
           const pickLower = entry.pick.toLowerCase();
-          const homeName = prediction.homeTeam.toLowerCase().split(" ")[0];
-          const awayName = prediction.awayTeam.toLowerCase().split(" ")[0];
+          const homeName = homeTeamName.toLowerCase().split(" ")[0];
+          const awayName = awayTeamName.toLowerCase().split(" ")[0];
 
           if (entry.market === "1X2") {
             const predicted = pickLower.includes("draw") ? "draw" : pickLower.includes(homeName) ? "home" : "away";
@@ -670,14 +702,69 @@ export async function registerRoutes(
           } else if (entry.market.includes("Asian Handicap -1.5")) {
             const predicted = pickLower.includes(homeName) ? "home" : "away";
             isCorrect = predicted === actualResult && Math.abs(homeGoals - awayGoals) >= 2;
+          } else if (entry.market === "1X2 + Over/Under 2.5") {
+            const resultPart = pickLower.includes("draw") ? "draw" : pickLower.includes(homeName) ? "home" : "away";
+            const goalsCorrect = pickLower.includes("over") ? totalGoals > 2.5 : totalGoals < 2.5;
+            isCorrect = resultPart === actualResult && goalsCorrect;
+          } else if (entry.market === "1X2 + BTTS") {
+            const resultPart = pickLower.includes("draw") ? "draw" : pickLower.includes(homeName) ? "home" : "away";
+            const bttsCorrect = (pickLower.includes("gg") || !pickLower.includes("ng")) ? bttsActual : !bttsActual;
+            isCorrect = resultPart === actualResult && bttsCorrect;
+          } else if (entry.market === "Double Chance + O/U 2.5") {
+            let dcCorrect = false;
+            if (pickLower.includes("draw")) {
+              dcCorrect = actualResult === "draw" || (pickLower.includes(homeName) && actualResult === "home") || (pickLower.includes(awayName) && actualResult === "away");
+            } else {
+              dcCorrect = actualResult !== (pickLower.includes(homeName) ? "away" : "home");
+            }
+            const goalsCorrect = pickLower.includes("over") ? totalGoals > 2.5 : totalGoals < 2.5;
+            isCorrect = dcCorrect && goalsCorrect;
+          } else if (entry.market === "Double Chance + BTTS") {
+            let dcCorrect = false;
+            if (pickLower.includes("draw")) {
+              dcCorrect = actualResult === "draw" || (pickLower.includes(homeName) && actualResult === "home") || (pickLower.includes(awayName) && actualResult === "away");
+            } else {
+              dcCorrect = actualResult !== (pickLower.includes(homeName) ? "away" : "home");
+            }
+            const bttsCorrect = (pickLower.includes("gg") || !pickLower.includes("ng")) ? bttsActual : !bttsActual;
+            isCorrect = dcCorrect && bttsCorrect;
+          } else if (entry.market === "No Bet (Draw No Bet)") {
+            if (actualResult === "draw") {
+              isCorrect = null;
+            } else {
+              const predicted = pickLower.includes(homeName) ? "home" : "away";
+              isCorrect = predicted === actualResult;
+            }
+          } else if (entry.market === "First Goal" || entry.market === "Last Goal") {
+            if (totalGoals === 0) {
+              isCorrect = false;
+            } else {
+              const predicted = pickLower.includes(homeName) ? "home" : "away";
+              isCorrect = predicted === actualResult || (actualResult === "draw" && predicted === (homeGoals >= awayGoals ? "home" : "away"));
+            }
+          } else if (entry.market === "Winning Margin") {
+            const margin = Math.abs(homeGoals - awayGoals);
+            if (pickLower.includes("draw") || pickLower.includes("no win")) {
+              isCorrect = actualResult === "draw";
+            } else {
+              const teamCorrect = pickLower.includes(homeName) ? actualResult === "home" : actualResult === "away";
+              const marginMatch = pickLower.includes("1") ? margin === 1 : pickLower.includes("2") ? margin === 2 : pickLower.includes("3+") ? margin >= 3 : margin >= 1;
+              isCorrect = teamCorrect && marginMatch;
+            }
+          } else if (entry.market === "Halftime Result" || entry.market === "HT/FT") {
+            isCorrect = null;
           }
 
           if (isCorrect !== null) {
             const stake = parseFloat(entry.stake || "0") || 0;
             const odds = parseFloat(entry.odds || "0") || 0;
             const payout = isCorrect && stake > 0 ? (stake * odds).toFixed(2) : "0";
-            await storage.updateBankrollEntry(entry.id, isCorrect ? "won" : "lost", payout);
+            const resultStr = isCorrect ? "won" : "lost";
+            console.log(`[AutoResolve] Match ${matchId}: ${entry.matchLabel} | ${entry.market} "${entry.pick}" => ${resultStr} (Score: ${homeGoals}-${awayGoals})`);
+            await storage.updateBankrollEntry(entry.id, resultStr, payout);
             resolved++;
+          } else {
+            console.log(`[AutoResolve] Match ${matchId}: Could not evaluate market "${entry.market}" pick "${entry.pick}"`);
           }
         }
       } catch (err) {
@@ -712,6 +799,7 @@ export async function registerRoutes(
 
   app.post("/api/bankroll/auto-resolve", async (_req, res) => {
     try {
+      lastFetchTime = 0;
       const resolved = await runAutoResolve();
       res.json({ resolved });
     } catch (err) {
