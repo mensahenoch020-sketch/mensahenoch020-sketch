@@ -20,9 +20,6 @@ export default function Settings() {
     queryKey: ["/api/favorites"],
   });
 
-  const { data: bankroll } = useQuery<any[]>({
-    queryKey: ["/api/bankroll"],
-  });
 
   const handleNotificationToggle = async () => {
     if (notificationsEnabled) {
@@ -108,16 +105,6 @@ export default function Settings() {
             <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/5">
               <span className="text-sm text-white/60">Favorite Teams</span>
               <span className="text-sm font-mono font-bold text-[#00FFA3]">{favorites?.length || 0}</span>
-            </div>
-            <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/5">
-              <span className="text-sm text-white/60">Bets Logged</span>
-              <span className="text-sm font-mono font-bold text-[#00FFA3]">{bankroll?.length || 0}</span>
-            </div>
-            <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/5">
-              <span className="text-sm text-white/60">Total Staked</span>
-              <span className="text-sm font-mono font-bold text-[#00FFA3]">
-                ${bankroll?.reduce((sum: number, e: any) => sum + (parseFloat(e.stake) || 0), 0).toFixed(2) || "0.00"}
-              </span>
             </div>
           </div>
         </Card>

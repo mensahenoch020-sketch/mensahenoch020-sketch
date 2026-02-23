@@ -11,7 +11,7 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { LayoutDashboard, MessageSquare, BarChart3, Zap, Shield, Star, Activity, DollarSign, Heart, History, TrendingUp, Trophy, User, MessageCircle, Mail, Flame } from "lucide-react";
+import { LayoutDashboard, MessageSquare, BarChart3, Zap, Shield, Star, Activity, Heart, History, TrendingUp, Trophy, User, MessageCircle, Mail, Flame } from "lucide-react";
 
 const mainItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
@@ -24,7 +24,7 @@ const mainItems = [
 ];
 
 const toolItems = [
-  { title: "Bankroll Tracker", url: "/bankroll", icon: DollarSign },
+
   { title: "Performance", url: "/performance-summary", icon: TrendingUp },
   { title: "Leaderboard", url: "/leaderboard", icon: Trophy },
   { title: "Favorite Teams", url: "/favorites", icon: Heart },

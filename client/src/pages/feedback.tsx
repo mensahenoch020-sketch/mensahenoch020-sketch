@@ -152,7 +152,7 @@ export default function Feedback() {
           {[
             { q: "How accurate are the predictions?", a: "Our AI models analyze real-time data and historical statistics. Accuracy varies by market — check the Statistics page for detailed breakdowns." },
             { q: "How often are picks refreshed?", a: "Daily Picks refresh automatically at 6:00 AM UTC every day with fresh AI analysis." },
-            { q: "Can I track my betting results?", a: "Yes! Use the Bankroll Tracker to log your bets, track wins/losses, and monitor your ROI over time." },
+            { q: "Can I track prediction accuracy?", a: "Yes! Check the Statistics page for detailed accuracy breakdowns by market, league, and confidence level." },
             { q: "What leagues are covered?", a: "We cover 12 major football competitions including Premier League, La Liga, Serie A, Bundesliga, Ligue 1, and more." },
           ].map((faq, i) => (
             <div key={i} className="p-3 rounded-lg bg-white/[0.02] border border-white/5">

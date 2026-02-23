@@ -79,21 +79,6 @@ export const favoriteTeams = pgTable("favorite_teams", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
-export const bankrollEntries = pgTable("bankroll_entries", {
-  id: serial("id").primaryKey(),
-  matchId: integer("match_id"),
-  matchLabel: text("match_label").notNull(),
-  market: text("market").notNull(),
-  pick: text("pick").notNull(),
-  stake: text("stake").default("0"),
-  odds: text("odds").default("0"),
-  confidence: integer("confidence"),
-  matchDate: text("match_date"),
-  result: text("result").default("pending"),
-  payout: text("payout").default("0"),
-  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
-});
-
 export const sharedPicks = pgTable("shared_picks", {
   id: serial("id").primaryKey(),
   shareCode: varchar("share_code", { length: 12 }).notNull().unique(),
@@ -106,7 +91,6 @@ export const insertMessageSchema = createInsertSchema(messages).omit({ id: true,
 export const insertPredictionSchema = createInsertSchema(predictions).omit({ id: true, createdAt: true });
 export const insertDailyPickSchema = createInsertSchema(dailyPicks).omit({ id: true, createdAt: true });
 export const insertFavoriteTeamSchema = createInsertSchema(favoriteTeams).omit({ id: true, createdAt: true });
-export const insertBankrollEntrySchema = createInsertSchema(bankrollEntries).omit({ id: true, createdAt: true });
 export const insertSharedPickSchema = createInsertSchema(sharedPicks).omit({ id: true, createdAt: true });
 export const insertLeaderboardEntrySchema = createInsertSchema(leaderboardEntries).omit({ id: true, updatedAt: true });
 
@@ -120,8 +104,6 @@ export type DailyPick = typeof dailyPicks.$inferSelect;
 export type InsertDailyPick = z.infer<typeof insertDailyPickSchema>;
 export type FavoriteTeam = typeof favoriteTeams.$inferSelect;
 export type InsertFavoriteTeam = z.infer<typeof insertFavoriteTeamSchema>;
-export type BankrollEntry = typeof bankrollEntries.$inferSelect;
-export type InsertBankrollEntry = z.infer<typeof insertBankrollEntrySchema>;
 export type SharedPick = typeof sharedPicks.$inferSelect;
 export type InsertSharedPick = z.infer<typeof insertSharedPickSchema>;
 export type LeaderboardEntry = typeof leaderboardEntries.$inferSelect;

@@ -5,12 +5,11 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, TrendingUp, TrendingDown, Flame, Target, Award, Calendar, BarChart3 } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, Flame, Target, Award, Calendar } from "lucide-react";
 
 interface PerformanceSummaryData {
   period: string;
   predictions: { total: number; wins: number; losses: number; accuracy: number };
-  bankroll: { totalStaked: number; totalReturns: number; profit: number; roi: number; wins: number; losses: number };
   streaks: { currentStreak: number; longestWinStreak: number; longestLossStreak: number };
   competitionStats: { name: string; accuracy: number; total: number }[];
   dailyResults: { date: string; accuracy: number; total: number; wins: number }[];
@@ -65,7 +64,7 @@ export default function PerformanceSummary() {
   }
 
   const predictions = data?.predictions ?? { total: 0, wins: 0, losses: 0, accuracy: 0 };
-  const bankroll = data?.bankroll ?? { totalStaked: 0, totalReturns: 0, profit: 0, roi: 0, wins: 0, losses: 0 };
+
   const streaks = data?.streaks ?? { currentStreak: 0, longestWinStreak: 0, longestLossStreak: 0 };
   const competitionStats = data?.competitionStats ?? [];
   const dailyResults = data?.dailyResults ?? [];
@@ -122,34 +121,20 @@ export default function PerformanceSummary() {
           <p className="text-xs text-white/40 mt-1 uppercase tracking-wider font-bold">Accuracy</p>
         </Card>
 
-        <Card className="bg-[#0d1520] border border-[#00FFA3]/15 rounded-xl p-5 text-center" data-testid="stat-profit">
-          <div className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto mb-3"
-            style={{
-              backgroundColor: bankroll.profit >= 0 ? "rgba(0,255,163,0.1)" : "rgba(239,68,68,0.1)",
-              border: `1px solid ${bankroll.profit >= 0 ? "rgba(0,255,163,0.2)" : "rgba(239,68,68,0.2)"}`,
-            }}>
-            {bankroll.profit >= 0
-              ? <TrendingUp className="w-5 h-5 text-[#00FFA3]" />
-              : <TrendingDown className="w-5 h-5 text-[#EF4444]" />}
+        <Card className="bg-[#0d1520] border border-[#00FFA3]/15 rounded-xl p-5 text-center" data-testid="stat-wins">
+          <div className="w-10 h-10 rounded-lg bg-[#00FFA3]/10 border border-[#00FFA3]/20 flex items-center justify-center mx-auto mb-3">
+            <TrendingUp className="w-5 h-5 text-[#00FFA3]" />
           </div>
-          <span className={`font-mono font-black text-3xl md:text-4xl ${bankroll.profit >= 0 ? "text-[#00FFA3]" : "text-[#EF4444]"}`}>
-            {bankroll.profit >= 0 ? "+" : ""}${bankroll.profit.toFixed(2)}
-          </span>
-          <p className="text-xs text-white/40 mt-1 uppercase tracking-wider font-bold">Profit/Loss</p>
+          <span className="font-mono font-black text-3xl md:text-4xl text-[#00FFA3]">{predictions.wins}</span>
+          <p className="text-xs text-white/40 mt-1 uppercase tracking-wider font-bold">Wins</p>
         </Card>
 
-        <Card className="bg-[#0d1520] border border-[#00FFA3]/15 rounded-xl p-5 text-center" data-testid="stat-roi">
-          <div className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto mb-3"
-            style={{
-              backgroundColor: bankroll.roi >= 0 ? "rgba(0,255,163,0.1)" : "rgba(239,68,68,0.1)",
-              border: `1px solid ${bankroll.roi >= 0 ? "rgba(0,255,163,0.2)" : "rgba(239,68,68,0.2)"}`,
-            }}>
-            <BarChart3 className="w-5 h-5" style={{ color: bankroll.roi >= 0 ? "#00FFA3" : "#EF4444" }} />
+        <Card className="bg-[#0d1520] border border-[#00FFA3]/15 rounded-xl p-5 text-center" data-testid="stat-losses">
+          <div className="w-10 h-10 rounded-lg bg-[#EF4444]/10 border border-[#EF4444]/20 flex items-center justify-center mx-auto mb-3">
+            <TrendingDown className="w-5 h-5 text-[#EF4444]" />
           </div>
-          <span className={`font-mono font-black text-3xl md:text-4xl ${bankroll.roi >= 0 ? "text-[#00FFA3]" : "text-[#EF4444]"}`}>
-            {bankroll.roi}%
-          </span>
-          <p className="text-xs text-white/40 mt-1 uppercase tracking-wider font-bold">ROI</p>
+          <span className="font-mono font-black text-3xl md:text-4xl text-[#EF4444]">{predictions.losses}</span>
+          <p className="text-xs text-white/40 mt-1 uppercase tracking-wider font-bold">Losses</p>
         </Card>
       </div>
 

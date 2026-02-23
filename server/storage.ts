@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { conversations, messages, predictions, dailyPicks, favoriteTeams, bankrollEntries, sharedPicks, leaderboardEntries, userStreaks } from "@shared/schema";
-import type { Conversation, InsertConversation, Message, InsertMessage, Prediction, InsertPrediction, DailyPick, InsertDailyPick, FavoriteTeam, InsertFavoriteTeam, BankrollEntry, InsertBankrollEntry, SharedPick, InsertSharedPick, LeaderboardEntry, InsertLeaderboardEntry, UserStreak } from "@shared/schema";
+import { conversations, messages, predictions, dailyPicks, favoriteTeams, sharedPicks, leaderboardEntries, userStreaks } from "@shared/schema";
+import type { Conversation, InsertConversation, Message, InsertMessage, Prediction, InsertPrediction, DailyPick, InsertDailyPick, FavoriteTeam, InsertFavoriteTeam, SharedPick, InsertSharedPick, LeaderboardEntry, InsertLeaderboardEntry, UserStreak } from "@shared/schema";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 
 export interface IStorage {
@@ -22,10 +22,6 @@ export interface IStorage {
   addFavorite(data: InsertFavoriteTeam): Promise<FavoriteTeam>;
   removeFavorite(teamId: number): Promise<void>;
   isFavorite(teamId: number): Promise<boolean>;
-  getAllBankrollEntries(): Promise<BankrollEntry[]>;
-  addBankrollEntry(data: InsertBankrollEntry): Promise<BankrollEntry>;
-  updateBankrollEntry(id: number, result: string, payout: string): Promise<BankrollEntry | undefined>;
-  deleteBankrollEntry(id: number): Promise<void>;
   getSharedPick(shareCode: string): Promise<SharedPick | undefined>;
   createSharedPick(data: InsertSharedPick): Promise<SharedPick>;
   getLeaderboard(): Promise<LeaderboardEntry[]>;
@@ -113,24 +109,6 @@ export class DatabaseStorage implements IStorage {
   async isFavorite(teamId: number): Promise<boolean> {
     const [fav] = await db.select().from(favoriteTeams).where(eq(favoriteTeams.teamId, teamId));
     return !!fav;
-  }
-
-  async getAllBankrollEntries(): Promise<BankrollEntry[]> {
-    return db.select().from(bankrollEntries).orderBy(desc(bankrollEntries.createdAt));
-  }
-
-  async addBankrollEntry(data: InsertBankrollEntry): Promise<BankrollEntry> {
-    const [entry] = await db.insert(bankrollEntries).values(data).returning();
-    return entry;
-  }
-
-  async updateBankrollEntry(id: number, result: string, payout: string): Promise<BankrollEntry | undefined> {
-    const [entry] = await db.update(bankrollEntries).set({ result, payout }).where(eq(bankrollEntries.id, id)).returning();
-    return entry;
-  }
-
-  async deleteBankrollEntry(id: number): Promise<void> {
-    await db.delete(bankrollEntries).where(eq(bankrollEntries.id, id));
   }
 
   async getSharedPick(shareCode: string): Promise<SharedPick | undefined> {

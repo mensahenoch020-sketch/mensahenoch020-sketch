@@ -22,7 +22,7 @@ import Analytics from "@/pages/analytics";
 import DailyPicks from "@/pages/daily-picks";
 import PrivacyPolicy from "@/pages/privacy-policy";
 import Statistics from "@/pages/statistics";
-import Bankroll from "@/pages/bankroll";
+
 import Favorites from "@/pages/favorites";
 import SharedPicks from "@/pages/shared-picks";
 import PickHistory from "@/pages/pick-history";
@@ -148,7 +148,7 @@ function Router() {
       <Route path="/chat" component={AIChat} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/statistics" component={Statistics} />
-      <Route path="/bankroll" component={Bankroll} />
+
       <Route path="/favorites" component={Favorites} />
       <Route path="/shared/:code" component={SharedPicks} />
       <Route path="/pick-history" component={PickHistory} />

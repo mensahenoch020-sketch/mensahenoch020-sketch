@@ -34,8 +34,8 @@ export default function Landing() {
     },
     {
       icon: TrendingUp,
-      title: "Bankroll Management",
-      desc: "Track your bets, profit/loss, ROI, and export history as CSV",
+      title: "Performance Tracking",
+      desc: "Track prediction accuracy, trends, and performance over time",
     },
     {
       icon: Zap,

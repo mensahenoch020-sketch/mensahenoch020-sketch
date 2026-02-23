@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { X, Trash2, Star, TrendingUp, Download, Check, Loader2, Share2, Link as LinkIcon, BookmarkPlus } from "lucide-react";
+import { X, Trash2, Star, TrendingUp, Download, Check, Loader2, Share2, Link as LinkIcon } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -149,7 +149,7 @@ export function BetSlip() {
   const { items, removeItem, clearAll, combinedConfidence, isOpen, setIsOpen } = useBetSlip();
   const [saving, setSaving] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const [logging, setLogging] = useState(false);
+
   const { toast } = useToast();
 
   const matchGroups = items.reduce((groups, item) => {
@@ -269,36 +269,6 @@ export function BetSlip() {
     }
   }, [items, toast]);
 
-  const handleLogToBankroll = useCallback(async () => {
-    setLogging(true);
-    try {
-      const entries = items.map(item => ({
-        matchId: item.matchId,
-        matchLabel: `${item.homeTeam} vs ${item.awayTeam}`,
-        market: item.market.market,
-        pick: item.market.pick,
-        odds: item.market.odds?.toString() || "0",
-        confidence: item.market.confidence,
-      }));
-      const res = await apiRequest("POST", "/api/bankroll/bulk", { entries });
-      const data = await res.json();
-      queryClient.invalidateQueries({ queryKey: ["/api/bankroll"] });
-      toast({
-        title: `${data.logged} pick${data.logged === 1 ? "" : "s"} logged!`,
-        description: "Your picks have been added to the Bankroll Tracker. Results will be updated automatically.",
-      });
-    } catch (err) {
-      console.error("Log to bankroll failed:", err);
-      toast({
-        title: "Logging failed",
-        description: "Could not log picks. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setLogging(false);
-    }
-  }, [items, toast]);
-
   if (items.length === 0) return null;
 
   if (!isOpen) {
@@ -391,20 +361,6 @@ export function BetSlip() {
         </div>
 
         <div className="p-3 border-t border-white/10 space-y-2">
-          <Button
-            size="sm"
-            className="w-full bg-[#FFB800] text-black text-xs gap-1.5 font-bold hover:bg-[#FFB800]/90"
-            onClick={handleLogToBankroll}
-            disabled={logging}
-            data-testid="button-log-bankroll"
-          >
-            {logging ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <BookmarkPlus className="w-3.5 h-3.5" />
-            )}
-            {logging ? "Logging..." : "Log to Bankroll"}
-          </Button>
           <div className="flex gap-2">
             <Button
               size="sm"

@@ -45,8 +45,8 @@ const tourSteps: TourStep[] = [
     icon: <Star className="w-8 h-8 text-[#00FFA3]" />,
   },
   {
-    title: "Bankroll Tracker",
-    description: "Log your bets with stake, odds, and market. Mark results as won or lost to track your profit, ROI, and total returns over time. Export your full history as a CSV file.",
+    title: "Statistics Dashboard",
+    description: "Track prediction accuracy across markets, leagues, and confidence levels. View trends over time and see how our AI models perform.",
     icon: <DollarSign className="w-8 h-8 text-[#00FFA3]" />,
   },
   {
