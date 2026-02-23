@@ -104,6 +104,15 @@ export default function Statistics() {
       Low: { correct: 0, total: 0 },
     };
 
+    function evaluate1X2(match: MatchPrediction, actualResult: string): boolean | null {
+      const m1x2 = match.markets.find(m => m.market === "1X2");
+      if (!m1x2) return null;
+      const pick = m1x2.pick.toLowerCase();
+      const predicted = pick.includes("draw") ? "draw" :
+        pick.includes(match.homeTeam.toLowerCase().split(" ")[0]) ? "home" : "away";
+      return predicted === actualResult;
+    }
+
     for (const match of finished) {
       const homeGoals = match.score!.fullTime.home!;
       const awayGoals = match.score!.fullTime.away!;
@@ -111,19 +120,16 @@ export default function Statistics() {
       const totalGoals = homeGoals + awayGoals;
       const bttsActual = homeGoals > 0 && awayGoals > 0;
 
-      const topMarket = match.markets[0];
-      if (topMarket) {
-        const pick1x2 = topMarket.pick.toLowerCase();
-        const predicted1x2 = pick1x2.includes("draw") ? "draw" :
-          pick1x2.includes(match.homeTeam.toLowerCase().split(" ")[0]) ? "home" : "away";
-        if (predicted1x2 === actualResult) {
-          wins++;
-        } else {
-          losses++;
-        }
+      const matchCorrect1x2 = evaluate1X2(match, actualResult);
+      if (matchCorrect1x2 !== null) {
+        if (matchCorrect1x2) wins++;
+        else losses++;
       }
 
       confBuckets[match.overallConfidence].total++;
+      if (matchCorrect1x2 !== null && matchCorrect1x2) {
+        confBuckets[match.overallConfidence].correct++;
+      }
 
       for (const market of match.markets) {
         let isCorrect = false;
@@ -181,9 +187,6 @@ export default function Statistics() {
           marketCorrect[market.market].total++;
           if (isCorrect) {
             marketCorrect[market.market].correct++;
-            if (market === topMarket) {
-              confBuckets[match.overallConfidence].correct++;
-            }
           }
         }
       }
@@ -192,10 +195,7 @@ export default function Statistics() {
         leagueCorrect[match.competition] = { correct: 0, total: 0 };
       }
       leagueCorrect[match.competition].total++;
-      const topPick = match.markets[0]?.pick.toLowerCase() || "";
-      const predicted1x2 = topPick.includes("draw") ? "draw" :
-        topPick.includes(match.homeTeam.toLowerCase().split(" ")[0]) ? "home" : "away";
-      if (predicted1x2 === actualResult) {
+      if (matchCorrect1x2 !== null && matchCorrect1x2) {
         leagueCorrect[match.competition].correct++;
       }
     }
@@ -221,10 +221,8 @@ export default function Statistics() {
         const hg = m.score!.fullTime.home!;
         const ag = m.score!.fullTime.away!;
         const actual = hg > ag ? "home" : hg < ag ? "away" : "draw";
-        const pick = m.markets[0]?.pick.toLowerCase() || "";
-        const predicted = pick.includes("draw") ? "draw" :
-          pick.includes(m.homeTeam.toLowerCase().split(" ")[0]) ? "home" : "away";
-        if (predicted === actual) batchWins++;
+        const result = evaluate1X2(m, actual);
+        if (result === true) batchWins++;
       }
       trendValues.push(batch.length > 0 ? Math.round((batchWins / batch.length) * 100) : 0);
     }
